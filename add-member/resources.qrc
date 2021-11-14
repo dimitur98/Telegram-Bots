@@ -1,0 +1,12 @@
+<RCC>
+  <qresource prefix="icons">
+    <file>minus.png</file>
+    <file>282100.png</file>
+    <file>icons8-refresh.svg</file>
+    <file>4954068.png</file>
+    <file>groups.png</file>
+  </qresource>
+  <qresource prefix="images">
+    <file>logo2.png</file>
+  </qresource>
+</RCC>
