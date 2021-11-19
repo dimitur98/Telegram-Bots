@@ -14,10 +14,12 @@ class Ui_MainWindow(object):
     self_main_window = None
     members_to_add = []
     selected_group = None 
-    mythread = None
-
+    client_data = []
+    stop_adding = False
+    add_members_thread = None
+    settings = None
     def setupUi(self, MainWindow):
-        self.mythread = MyThread()
+        self.settings = Ui_Settings()
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(959, 600)
         icon = QtGui.QIcon()
@@ -75,9 +77,9 @@ class Ui_MainWindow(object):
         font.setPointSize(11)
         self.accounts_button.setFont(font)
         self.accounts_button.setStyleSheet("border-radius:20px;\n"
-        "border-color:rgb(39,39,39,255);\n"
-        "border-style:outset;\n"
-        "border-width:4px;")
+                                           "border-color:rgb(39,39,39,255);\n"
+                                           "border-style:outset;\n"
+                                           "border-width:4px;")
         self.accounts_button.setIconSize(QtCore.QSize(100, 100))
         self.accounts_button.setAutoRepeatDelay(300)
         self.accounts_button.setObjectName("accounts_button")
@@ -88,9 +90,9 @@ class Ui_MainWindow(object):
         font.setPointSize(11)
         self.scrape_button.setFont(font)
         self.scrape_button.setStyleSheet("border-radius:20px;\n"
-        "border-color:rgb(39,39,39,255);\n"
-        "border-style:outset;\n"
-        "border-width:4px;")
+                                         "border-color:rgb(39,39,39,255);\n"
+                                         "border-style:outset;\n"
+                                         "border-width:4px;")
         self.scrape_button.setObjectName("scrape_button")
         self.verticalLayout_3.addWidget(self.scrape_button)
         self.add_members_button = QtWidgets.QPushButton(self.menu)
@@ -99,9 +101,9 @@ class Ui_MainWindow(object):
         font.setPointSize(11)
         self.add_members_button.setFont(font)
         self.add_members_button.setStyleSheet("border-radius:20px;\n"
-        "border-color:rgb(39,39,39,255);\n"
-        "border-style:outset;\n"
-        "border-width:4px;")
+                                              "border-color:rgb(39,39,39,255);\n"
+                                              "border-style:outset;\n"
+                                              "border-width:4px;")
         self.add_members_button.setObjectName("add_members_button")
         self.verticalLayout_3.addWidget(self.add_members_button)
         self.verticalLayout.addWidget(self.menu)
@@ -235,11 +237,11 @@ class Ui_MainWindow(object):
         font.setPointSize(11)
         self.add_account_button.setFont(font)
         self.add_account_button.setStyleSheet("background-color: qlineargradient(spread:pad, x1:0.039801, y1:0.023, x2:1, y2:1, stop:0 rgba(47, 47, 47, 255), stop:1 rgba(57, 57, 57, 255));\n"
-        "color: rgb(50, 141, 189, 255);\n"
-        "border-radius:20px;\n"
-        "border-color:rgb(39,39,39,255);\n"
-        "border-style:outset;\n"
-        "border-width:4px;")
+                                              "color: rgb(50, 141, 189, 255);\n"
+                                              "border-radius:20px;\n"
+                                              "border-color:rgb(39,39,39,255);\n"
+                                              "border-style:outset;\n"
+                                              "border-width:4px;")
         self.add_account_button.setObjectName("add_account_button")
         self.verticalLayout_9.addWidget(self.add_account_button)
         self.verticalLayout_7.addWidget(self.button_frame)
@@ -307,7 +309,7 @@ class Ui_MainWindow(object):
         font.setWeight(50)
         self.scrape_label.setFont(font)
         self.scrape_label.setStyleSheet("font: 29pt \"MS Shell Dlg 2\";\n"
-        "color: rgb(50, 141, 189, 255);")
+                                        "color: rgb(50, 141, 189, 255);")
         self.scrape_label.setObjectName("scrape_label")
         self.horizontalLayout_10.addWidget(self.scrape_label)
         self.horizontalLayout_9.addWidget(self.scrape_label_frame_2, 0, QtCore.Qt.AlignTop)
@@ -497,11 +499,11 @@ class Ui_MainWindow(object):
         font.setPointSize(9)
         self.choose_csv_button.setFont(font)
         self.choose_csv_button.setStyleSheet("background-color: qlineargradient(spread:pad, x1:0.039801, y1:0.023, x2:1, y2:1, stop:0 rgba(47, 47, 47, 255), stop:1 rgba(57, 57, 57, 255));\n"
-        "color: rgb(50, 141, 189, 255);\n"
-        "border-radius:20px;\n"
-        "border-color:rgb(39,39,39,255);\n"
-        "border-style:outset;\n"
-        "border-width:4px;")
+                                             "color: rgb(50, 141, 189, 255);\n"
+                                             "border-radius:20px;\n"
+                                             "border-color:rgb(39,39,39,255);\n"
+                                             "border-style:outset;\n"
+                                             "border-width:4px;")
         self.choose_csv_button.setObjectName("choose_csv_button")
         self.horizontalLayout_5.addWidget(self.choose_csv_button)
         self.verticalLayout_17.addWidget(self.choose_csv_frame)
@@ -540,7 +542,7 @@ class Ui_MainWindow(object):
         self.add_members_labe = QtWidgets.QLabel(self.add_members_label_frame_2)
         self.add_members_labe.setMaximumSize(QtCore.QSize(300, 75))
         self.add_members_labe.setStyleSheet("font: 29pt \"MS Shell Dlg 2\";\n"
-        "color: rgb(50, 141, 189, 255);")
+                                            "color: rgb(50, 141, 189, 255);")
         self.add_members_labe.setObjectName("add_members_labe")
         self.horizontalLayout_7.addWidget(self.add_members_labe)
         self.horizontalLayout_6.addWidget(self.add_members_label_frame_2, 0, QtCore.Qt.AlignTop)
@@ -667,28 +669,47 @@ class Ui_MainWindow(object):
         self.choose_group_input_2.setMaximumSize(QtCore.QSize(50, 16777215))
         self.choose_group_input_2.setAlignment(QtCore.Qt.AlignCenter)
         self.choose_group_input_2.setObjectName("choose_group_input_2")
-        self.choose_group_input_2.returnPressed.connect(self.get_index_group_to_add_members)
+        self.choose_group_input_2.setFont(font)
         self.horizontalLayout_14.addWidget(self.choose_group_input_2)
         self.verticalLayout_23.addWidget(self.add_members_choose_group_input_frame, 0, QtCore.Qt.AlignTop)
-        self.must_choose_group_frame = QtWidgets.QFrame(self.add_members_input_frame_2)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+        self.adding_progressbar_frame = QtWidgets.QFrame(self.add_members_input_frame_2)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.must_choose_group_frame.sizePolicy().hasHeightForWidth())
-        self.must_choose_group_frame.setSizePolicy(sizePolicy)
-        self.must_choose_group_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.must_choose_group_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.must_choose_group_frame.setObjectName("must_choose_group_frame")
-        self.verticalLayout_12 = QtWidgets.QVBoxLayout(self.must_choose_group_frame)
-        self.verticalLayout_12.setContentsMargins(0, 0, 0, 0)
+        sizePolicy.setHeightForWidth(self.adding_progressbar_frame.sizePolicy().hasHeightForWidth())
+        self.adding_progressbar_frame.setSizePolicy(sizePolicy)
+        self.adding_progressbar_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.adding_progressbar_frame.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.adding_progressbar_frame.setObjectName("adding_progressbar_frame")
+        self.verticalLayout_12 = QtWidgets.QVBoxLayout(self.adding_progressbar_frame)
+        self.verticalLayout_12.setContentsMargins(0, 0, 0, 50)
         self.verticalLayout_12.setSpacing(0)
         self.verticalLayout_12.setObjectName("verticalLayout_12")
-        self.choose_group_label_2 = QtWidgets.QLabel(self.must_choose_group_frame)
-        self.choose_group_label_2.setStyleSheet("color: rgb(255, 0, 0)")
-        self.choose_group_label_2.setText("")
-        self.choose_group_label_2.setObjectName("choose_group_label_2")
-        self.verticalLayout_12.addWidget(self.choose_group_label_2, 0, QtCore.Qt.AlignTop)
-        self.verticalLayout_23.addWidget(self.must_choose_group_frame, 0, QtCore.Qt.AlignRight)
+        self.progress_label = QtWidgets.QLabel(self.adding_progressbar_frame)
+        self.progress_label.setObjectName("progress_label")
+        self.progress_label.setMaximumSize(QtCore.QSize(16777215,20))
+        self.progress_label.setStyleSheet("color: rgb(50, 151, 189, 255);\n"
+                                          "font:10pt\"MS Shell Dig 2\";")
+        self.progress_label.setHidden(True)
+        self.verticalLayout_12.addWidget(self.progress_label)
+        self.adding_progressbar = QtWidgets.QProgressBar(self.adding_progressbar_frame)
+        self.adding_progressbar.setObjectName("adding_progressbar")
+        self.adding_progressbar.setStyleSheet("QProgressBar:horizontal {\n"
+                                              "border: 1px solid gray;\n"
+                                              "border-radius: 3px;\n"
+                                              "background: white;\n"
+                                              "padding: 1px;\n"
+                                              "text-align: center;\n"
+                                              "}\n"
+                                              "QProgressBar::chunk:horizontal {\n"
+                                              "background: qlineargradient(x1: 0, y1: 0.5, x2: 1, y2: 0.5, stop: 0 rgb(50, 141, 189, 255), stop: 1 white);\n"
+                                              "margin-right: 2px; /* space */\n"
+                                              "width: 20px;\n"
+                                              "})")
+        self.adding_progressbar.setTextVisible(True)
+        self.adding_progressbar.setHidden(True)
+        self.verticalLayout_12.addWidget(self.adding_progressbar)
+        self.verticalLayout_23.addWidget(self.adding_progressbar_frame)
         self.add_members_start_frame = QtWidgets.QFrame(self.add_members_input_frame_2)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
@@ -699,8 +720,8 @@ class Ui_MainWindow(object):
         self.add_members_start_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.add_members_start_frame.setFrameShadow(QtWidgets.QFrame.Raised)
         self.add_members_start_frame.setObjectName("add_members_start_frame")
-        self.verticalLayout_6 = QtWidgets.QVBoxLayout(self.add_members_start_frame)
-        self.verticalLayout_6.setContentsMargins(50, 0, 0, 0)
+        self.verticalLayout_6 = QtWidgets.QHBoxLayout(self.add_members_start_frame)
+        self.verticalLayout_6.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout_6.setSpacing(0)
         self.verticalLayout_6.setObjectName("verticalLayout_6")
         self.start_button = QtWidgets.QPushButton(self.add_members_start_frame)
@@ -714,13 +735,27 @@ class Ui_MainWindow(object):
         font.setPointSize(11)
         self.start_button.setFont(font)
         self.start_button.setStyleSheet("background-color: qlineargradient(spread:pad, x1:0.039801, y1:0.023, x2:1, y2:1, stop:0 rgba(47, 47, 47, 255), stop:1 rgba(57, 57, 57, 255));\n"
-        "color: rgb(50, 141, 189, 255);\n"
-        "border-radius:20px;\n"
-        "border-color:rgb(39,39,39,255);\n"
-        "border-style:outset;\n"
-        "border-width:4px;")
+                                        "color: rgb(50, 141, 189, 255);\n"
+                                        "border-radius:20px;\n"
+                                        "border-color:rgb(39,39,39,255);\n"
+                                        "border-style:outset;\n"
+                                        "border-width:4px;")
         self.start_button.setObjectName("start_button")
+        self.start_button.clicked.connect(self.get_index_group_to_add_members)
         self.verticalLayout_6.addWidget(self.start_button)
+        self.stop_adding_button = QtWidgets.QPushButton(self.add_members_start_frame)
+        self.stop_adding_button.setMaximumSize(QtCore.QSize(150, 40))
+        self.stop_adding_button.setFont(font)
+        self.stop_adding_button.setStyleSheet("background-color: qlineargradient(spread:pad, x1:0.039801, y1:0.023, x2:1, y2:1, stop:0 rgba(47, 47, 47, 255), stop:1 rgba(57, 57, 57, 255));\n"
+                                              "color: rgb(50, 141, 189, 255);\n"
+                                              "border-radius:20px;\n"
+                                              "border-color:rgb(39,39,39,255);\n"
+                                              "border-style:outset;\n"
+                                              "border-width:4px;")
+        self.stop_adding_button.setObjectName("stop_adding_button")
+        self.stop_adding_button.clicked.connect(self.stop_adding_members)
+        self.verticalLayout_6.addWidget(self.stop_adding_button)
+        self.verticalLayout_6.setSpacing(7)
         self.verticalLayout_23.addWidget(self.add_members_start_frame)
         self.verticalLayout_21.addWidget(self.add_members_input_frame_2)
         self.horizontalLayout_8.addWidget(self.add_members_input_frame)
@@ -728,10 +763,17 @@ class Ui_MainWindow(object):
         self.add_members_list_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.add_members_list_frame.setFrameShadow(QtWidgets.QFrame.Raised)
         self.add_members_list_frame.setObjectName("add_members_list_frame")
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.body.sizePolicy().hasHeightForWidth())
+        self.add_members_list_frame.setSizePolicy(sizePolicy)
         self.verticalLayout_26 = QtWidgets.QVBoxLayout(self.add_members_list_frame)
         self.verticalLayout_26.setObjectName("verticalLayout_26")
+        self.verticalLayout_26.setContentsMargins(0, 0, 0, 0)
         self.add_members_list = QtWidgets.QTableWidget(self.add_members_list_frame)
         self.add_members_list.setObjectName("add_members_list")
+        self.add_members_list.setMaximumSize(QtCore.QSize(500,16777215))
         self.add_members_list.setColumnCount(3)
         self.add_members_list.setRowCount(0)
         item = QtWidgets.QTableWidgetItem()
@@ -761,7 +803,7 @@ class Ui_MainWindow(object):
         groups = add_to_group.load_groups(add_to_group.current_client)
         add_to_group.accounts[add_to_group.current_client] = groups
         add_to_group.client_list[add_to_group.current_client] = add_to_group.current_phone
-        Ui_MainWindow.accounts_list_show(self)
+        self.accounts_list_show()
 
     def accounts_list_show(self):
         index = 1
@@ -789,18 +831,20 @@ class Ui_MainWindow(object):
         if phone == "" or api_id == "" or api_hash == "":
                 self.accounts_danger_text.setText("*All fields are required.")
                 return
-        time.sleep(1)
-        client = Add_To_Group.client_initializer(api_id, api_hash, phone,self.mythread.loop)
+        # time.sleep(1)
+        self.client_data.append({"id":api_id, "hash":api_hash, "phone":phone})
+        client = add_to_group.client_initializer(api_id, api_hash, phone)
         if client == False:
             Ui_Form.verify_account()
         else:
             self.add_account_to_list()
     def settings_page_show(self):
         self.Ui_Settings = QtWidgets.QWidget()
-        self.ui = Ui_Settings()
-        self.ui.setupUi(self.Ui_Settings)
+        # self.ui = Ui_Settings()
+        self.settings.setupUi(self.Ui_Settings)
         self.Ui_Settings.setMaximumSize(QtCore.QSize(400, 300))
         self.Ui_Settings.show()
+
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "Members Add Bot"))
@@ -838,7 +882,9 @@ class Ui_MainWindow(object):
         self.add_members_groups_label.setText(_translate("MainWindow", "Groups"))
         self.groups_from_label.setText(_translate("MainWindow", "*Groups are from first added account!"))
         self.choose_group_input_label.setText(_translate("MainWindow", "Choose group to add members to"))
+        self.progress_label.setText(_translate("MainWindow", "Progress"))
         self.start_button.setText(_translate("MainWindow", "Start"))
+        self.stop_adding_button.setText(_translate("MainWindow", "Stop"))
         item = self.add_members_list.horizontalHeaderItem(0)
         item.setText(_translate("MainWindow", "Username"))
         item = self.add_members_list.horizontalHeaderItem(1)
@@ -872,10 +918,16 @@ class Ui_MainWindow(object):
             elif scrape:
                 Ui_MainWindow.self_main_window.scraped_groups_list.addItem(new_item)
     def scrape_members(self,group_index):
+        # self.thread = QtCore.QThread()
+        # self.worker = ScrapeMembersThread(group_index)
+        # self.worker.moveToThread(self.thread)
+        # self.thread.started.connect(self.worker.run)
+        # self.worker.finished.connect(self.thread.quit)
+        # self.thread.start()
         try:
             group = add_to_group.get_account_groups(current_client=True, group_index=int(group_index)-1)
-            Ui_MainWindow.members_to_add = Scraper.scrape_members(add_to_group.current_client, group)
-           
+            self.members_to_add = Scraper.scrape_members(add_to_group.current_client, group)
+            print(self.members_to_add)
             self.show_scraped_memebers()
         except Exception as ex:
             print(ex)
@@ -889,13 +941,12 @@ class Ui_MainWindow(object):
         group_index = group_name.split(".")[0]
         self.scrape_members(group_index)
     def show_scraped_memebers(self):   
-        if Ui_MainWindow.members_to_add == []:
+        if self.members_to_add == []:
             return
-        self.scraped_members_table.setRowCount(0)
-        self.scraped_members_table.setRowCount(len(Ui_MainWindow.members_to_add))
+        self.scraped_members_table.setRowCount(len(self.members_to_add))
         i = 0
 
-        for member in Ui_MainWindow.members_to_add:
+        for member in self.members_to_add:
             self.scraped_members_table.setItem(i,0,QtWidgets.QTableWidgetItem(member["username"]))
             self.scraped_members_table.setItem(i,1,QtWidgets.QTableWidgetItem(member["name"]))
             i += 1
@@ -912,46 +963,51 @@ class Ui_MainWindow(object):
         Ui_MainWindow.members_to_add = add_to_group.read_file(file_root)
         self.show_scraped_memebers()
     def get_index_group_to_add_members(self):
+        self.stop_adding = False
         group_index = self.choose_group_input_2.text()
         if group_index == '':
             return
         self.add_members(group_index)
     def get_index_group_to_add_members_on_dclick(self, item):
+        self.stop_adding = False
         group_name = item.text()
         group_index = group_name.split(".")[0]
-        self.add_members(group_index)
+        self.choose_group_input_2.setText(group_index)
     def add_members(self, group_index):
-        self.selected_group = add_to_group.get_account_groups(current_client=True,group_index = int(group_index)-1)
-        if True:
-            add_to_group.get_already_added_users(self.selected_group) 
-        self.thread = QtCore.QThread()
-        self.worker = MyThread()
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.run)
-        self.worker.finished.connect(self.thread.quit)
-        self.thread.start()
-        # i = 0
-        # for member in Ui_MainWindow.members_to_add:
-        #     proccess = add_to_group.add_members(member, Ui_MainWindow.self_main_window.selected_group.title)
+        try:
+            self.selected_group = add_to_group.get_account_groups(current_client=True,group_index = int(group_index)-1)
 
-        #     Ui_MainWindow.self_main_window.add_members_list.insertRow(i)
-        #     Ui_MainWindow.self_main_window.add_members_list.setItem(i,0,QtWidgets.QTableWidgetItem(member["name"]))
-        #     Ui_MainWindow.self_main_window.add_members_list.setItem(i,1, QtWidgets.QTableWidgetItem(add_to_group.client_list[add_to_group.current_client]))
-        #     Ui_MainWindow.self_main_window.add_members_list.setItem(i,2,QtWidgets.QTableWidgetItem(proccess))
-        #     i+=1
-            
-        #     # if proccess == SUCCESSFULL_ADDED:
-        #     add_to_group.change_client()
-    
+            if True:
+                add_to_group.get_already_added_users(self.selected_group) 
+            self.adding_progressbar.setMinimum(0)
+            self.adding_progressbar.setMaximum(len(self.members_to_add))
+            self.adding_progressbar.setHidden(False)
+            self.progress_label.setHidden(False)
+            self.thread = QtCore.QThread()
+            self.worker = AddMembersThread(self.members_to_add)
+            self.add_members_thread = self.worker
+            self.worker.moveToThread(self.thread)
+            self.thread.started.connect(self.worker.run)
+            self.worker.update_progress.connect(self.update_progressbar)
+            self.worker.finished.connect(self.thread.quit)
+            self.worker.finished.connect(self.enable_start_button)
+            self.thread.start()
+        except:
+            print(12)
+    def update_progressbar(self):
+        value = self.adding_progressbar.value() + 1
+        self.adding_progressbar.setValue(value)
+    def stop_adding_members(self):
+        if self.add_members_thread == None:
+            return
+        self.add_members_thread.stop_adding_members()
+    def enable_start_button(self):
+        self.start_button.setEnabled(True)
 import resources_rc
-
-class MyThread(QtCore.QObject):
-    change_value = QtCore.pyqtSignal(str)
-    finished = QtCore.pyqtSignal()
-    loop = None
-    def __init__(self) -> None:
+class ScrapeMembersThread(QtCore.QThread):
+    def __init__(self, group_index):
         super().__init__()
-        self.loop = self.get_or_create_eventloop()
+        self.group_index = group_index
     def get_or_create_eventloop(self):
         try:
             return asyncio.get_event_loop()
@@ -961,17 +1017,69 @@ class MyThread(QtCore.QObject):
             asyncio.set_event_loop(loop)
             return asyncio.get_event_loop()
     def run(self):
-        
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self.test())
-        self.loop.close()
-        # # self.test()
-    async def test(self):
-        i = 0
-        for member in Ui_MainWindow.members_to_add:
-            if i % Ui_Settings.members_per_batch == 0:
-                await asyncio.sleep(Ui_Settings.batches_interval)
+        loop = self.get_or_create_eventloop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(self.scrape(loop))
+        loop.close()
+    async def scrape(self,loop):
+        print(loop)
+        try:
+            group = add_to_group.get_account_groups(current_client=True, group_index=int(self.group_index)-1)
+            Ui_MainWindow.members_to_add = await Scraper.scrape_members(add_to_group.current_client, group,loop)
+            
+            Ui_MainWindow.show_scraped_memebers(Ui_MainWindow.self_main_window)
+        except Exception as ex:
+            print(ex)
+class AddMembersThread(QtCore.QThread):
+    update_progress = QtCore.pyqtSignal()
+    finished = QtCore.pyqtSignal()
+    loop = None
+    stop_adding = False
+    members = None
+    def __init__(self,members) -> None:
+        super().__init__()
+        self.loop = self.get_or_create_eventloop()
+        self.members = members
+    def get_or_create_eventloop(self):
+        try:
+            return asyncio.get_event_loop()
+        except RuntimeError as ex:
+            if "There is no current event loop in thread" in str(ex):
+                loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return asyncio.get_event_loop()
 
+    def run(self):
+        Ui_MainWindow.self_main_window.adding_progressbar.setStyleSheet("QProgressBar:horizontal {\n"
+                                                                        "border: 1px solid gray;\n"
+                                                                        "border-radius: 3px;\n"
+                                                                        "background: white;\n"
+                                                                        "padding: 1px;\n"
+                                                                        "text-align: center;\n"
+                                                                        "font-size: 15px;\n"
+                                                                        "}\n"
+                                                                        "QProgressBar::chunk:horizontal {\n"
+                                                                        "background: qlineargradient(x1: 0, y1: 0.5, x2: 1, y2: 0.5, stop: 0 rgb(50, 141, 189, 255), stop: 1 white);\n"
+                                                                        "margin-right: 2px; /* space */\n"
+                                                                        "width: 10px;\n"
+                                                                        "})")
+        try:
+            loop  = self.get_or_create_eventloop()
+            print(self.loop)
+            asyncio.set_event_loop(self.loop)
+            self.loop.run_until_complete(self.add())
+            # self.loop.close()
+        except Exception as e:
+            print(e)
+        # # self.test()
+    async def add(self):
+        i = 0
+        for member in self.members:
+            # if i % Ui_MainWindow.self_main_window.settings.members_per_batch == 0:
+            #     await asyncio.sleep(Ui_MainWindow.self_main_window.settings.batches_interval)
+            if self.stop_adding:
+                Ui_MainWindow.self_main_window.start_button.setEnabled(True)
+                break
             proccess = await add_to_group.add_members(member, Ui_MainWindow.self_main_window.selected_group.title)
 
             Ui_MainWindow.self_main_window.add_members_list.insertRow(i)
@@ -979,9 +1087,29 @@ class MyThread(QtCore.QObject):
             Ui_MainWindow.self_main_window.add_members_list.setItem(i,1, QtWidgets.QTableWidgetItem(add_to_group.client_list[add_to_group.current_client]))
             Ui_MainWindow.self_main_window.add_members_list.setItem(i,2,QtWidgets.QTableWidgetItem(proccess))
             i+=1
-            
-            if proccess == SUCCESSFULL_ADDED or proccess == FloodError:
+            print("emit")
+            self.update_progress.emit()
+            await asyncio.sleep(Ui_MainWindow.self_main_window.settings.user_add_time_interval)
+            if proccess != ALREADY_ADDED:
                 add_to_group.change_client()
+        self.finished.emit()
+    def stop_adding_members(self):
+        self.stop_adding = True
+        Ui_MainWindow.self_main_window.start_button.setEnabled(False)
+        Ui_MainWindow.self_main_window.adding_progressbar.setStyleSheet("QProgressBar:horizontal {\n"
+                                                                        "border: 1px solid gray;\n"
+                                                                        "border-radius: 3px;\n"
+                                                                        "background: white;\n"
+                                                                        "padding: 1px;\n"
+                                                                        "text-align: center;\n"
+                                                                        "font-size: 15px;\n"
+                                                                        "}\n"
+                                                                        "QProgressBar::chunk:horizontal {\n"
+                                                                        "background: qlineargradient(x1: 0, y1: 0.5, x2: 1, y2: 0.5, stop: 0 red, stop: 1 white);\n"
+                                                                        "margin-right: 2px; /* space */\n"
+                                                                        "width: 10px;\n"
+                                                                        "})")
+               
 class Ui_Form(object):
     current_client = None
     current_phone = None
@@ -1116,9 +1244,11 @@ class eventFilterClass(QtCore.QObject):
             return True
         return super().eventFilter(source,event)
 
-class Ui_Settings(object):
+class Ui_Settings:
     members_per_batch = 20
     batches_interval=60
+    user_add_time_interval = 10
+
     def setupUi(self, Ui_Settings):
         Ui_Settings.setObjectName("Ui_Settings")
         Ui_Settings.resize(318, 300)
@@ -1317,11 +1447,11 @@ class Ui_Settings(object):
                 print(0)
                 return
         except:
-            add_to_group.user_add_time_interval_input = 10
+            self.user_add_time_interval = 10
             self.user_add_time_interval_input.setText('10')
             return
 
-        add_to_group.user_add_time_interval_input = time
+        self.user_add_time_interval = time
         self.multi_users_settings_checkbox.setChecked(False)
     def set_members_per_batch(self):
         try:

@@ -1,6 +1,7 @@
 #!/bin/env python3
 import asyncio
 from logging import currentframe
+from telethon.client import account, telegramclient
 from telethon.sync import *
 from telethon.tl.functions.messages import GetDialogsRequest
 from telethon.tl.types import InputPeerEmpty, InputPeerChannel, InputPeerUser
@@ -25,10 +26,10 @@ class Add_To_Group:
     current_client = None
     current_phone = None
     current_phone_hash = None
-    mode = 2
+    mode = 1
     already_added_users = []
-    user_add_time_interval = 10
     skip_added_users = True
+
     def change_client(self,client = None,deleteClient = False):
         if client == None:
             client = self.current_client
@@ -48,10 +49,10 @@ class Add_To_Group:
         last_date = None
         chunk_size = 200
         groups = []
-        print("test ",client)
+        
         if client == None:
             client = self.current_client
-        print("clent: ", self.current_client)
+        
         result = client(GetDialogsRequest(
             offset_date=last_date,
             offset_id=0,
@@ -65,7 +66,7 @@ class Add_To_Group:
                     groups.append(group)
             except:
                 continue
-        print(groups)
+        
         if index == None:
             return groups
         else:
@@ -116,13 +117,13 @@ class Add_To_Group:
             return
 
         group_names = self.load_group_names(groups)
-        print(group_names)
         key_list = list(group_names.keys())
         val_list = list(group_names.values())
         position = val_list.index(group_name)
         g_index = key_list[position]
 
         target_group=self.get_account_groups(current_client=True,group_index = g_index)
+        # target_group = self.get_account_groups(client = list(self.accounts.keys())[0],group_index=g_index)
         return InputPeerChannel(target_group.id,target_group.access_hash)
     async def get_new_instance_of_group(self, group_name):
         last_date = None
@@ -156,19 +157,19 @@ class Add_To_Group:
 
         target_group=groups[int(g_index)]
         return InputPeerChannel(target_group.id,target_group.access_hash)
-    def client_initializer(api_id, api_hash, phone,loop):
+    def client_initializer(self,api_id, api_hash, phone):
         try:
-            client = TelegramClient(phone, api_id, api_hash,loop=loop)
-            Add_To_Group.current_client = client
-            Add_To_Group.current_phone = phone
+            client = TelegramClient(phone, api_id, api_hash)
+            self.current_client = client
+            self.current_phone = phone
         except KeyError:
             #todo
+            print("key error")
             return
         client.connect()
         if not client.is_user_authorized():
-            Add_To_Group.current_phone_hash = client.send_code_request(phone)
+            self.current_phone_hash = client.send_code_request(phone)
             return False
-  
         return client
 
     def read_file(self,input_file):
@@ -189,12 +190,11 @@ class Add_To_Group:
 
     async def add_members(self,user, group_name):
         client = self.current_client
-        print(client.get_stats)
         groups = self.get_account_groups(current_client=True)
         target_group_entity = self.client_group_select(group_name, groups)
-        # target_group_entity = await self.get_new_instance_of_group(group_name)
         already_added = False
         user_to_add = None
+
         try:
             if self.skip_added_users:
                 for added_user in self.already_added_users:
@@ -212,8 +212,8 @@ class Add_To_Group:
             elif self.mode == 2:
                 user_to_add = InputPeerUser(int(user['id']), int(user['access_hash']))
                 
-            await asyncio.sleep(self.user_add_time_interval)
-            client(InviteToChannelRequest(target_group_entity,[user_to_add]))
+            print(1)
+            await client(InviteToChannelRequest(target_group_entity,[user_to_add]))
             return SUCCESSFULL_ADDED
         except PeerFloodError as e:
             print("flood")

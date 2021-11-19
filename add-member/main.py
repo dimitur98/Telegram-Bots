@@ -10,7 +10,7 @@ def main():
         MainWindow = QtWidgets.QMainWindow()
         ui = Ui_MainWindow()
         ui.setupUi(MainWindow)
-        MainWindow.setMaximumSize(930,700)
+        MainWindow.setMaximumSize(940,700)
         MainWindow.show()
         sys.exit(app.exec_())
 # main()
