@@ -1,23 +1,25 @@
+from logging import addLevelName, error
 from PyQt5 import QtCore, QtGui, QtWidgets
 from telethon.errors.rpcbaseerrors import FloodError
 import telethon.sync
 from add_to_group import *
 from enter_code import *
 from scraper import *
+from db import *
 import sys
-import os
-import pickle
 
+scraper = Scraper()
 add_to_group = Add_To_Group()
-
+db = Db()
 class Ui_MainWindow(object):
     self_main_window = None
     members_to_add = []
     selected_group = None 
-    client_data = []
     stop_adding = False
     add_members_thread = None
     settings = None
+    
+    
     def setupUi(self, MainWindow):
         self.settings = Ui_Settings()
         MainWindow.setObjectName("MainWindow")
@@ -771,19 +773,19 @@ class Ui_MainWindow(object):
         self.verticalLayout_26 = QtWidgets.QVBoxLayout(self.add_members_list_frame)
         self.verticalLayout_26.setObjectName("verticalLayout_26")
         self.verticalLayout_26.setContentsMargins(0, 0, 0, 0)
-        self.add_members_list = QtWidgets.QTableWidget(self.add_members_list_frame)
-        self.add_members_list.setObjectName("add_members_list")
-        self.add_members_list.setMaximumSize(QtCore.QSize(500,16777215))
-        self.add_members_list.setColumnCount(3)
-        self.add_members_list.setRowCount(0)
+        self.add_members_table = QtWidgets.QTableWidget(self.add_members_list_frame)
+        self.add_members_table.setObjectName("add_members_table")
+        self.add_members_table.setMaximumSize(QtCore.QSize(500,16777215))
+        self.add_members_table.setColumnCount(3)
+        self.add_members_table.setRowCount(0)
         item = QtWidgets.QTableWidgetItem()
-        self.add_members_list.setHorizontalHeaderItem(0, item)
+        self.add_members_table.setHorizontalHeaderItem(0, item)
         item = QtWidgets.QTableWidgetItem()
-        self.add_members_list.setHorizontalHeaderItem(1, item)
+        self.add_members_table.setHorizontalHeaderItem(1, item)
         item = QtWidgets.QTableWidgetItem()
-        self.add_members_list.setHorizontalHeaderItem(2, item)
-        self.add_members_list.horizontalHeader().setStretchLastSection(True)
-        self.verticalLayout_26.addWidget(self.add_members_list)
+        self.add_members_table.setHorizontalHeaderItem(2, item)
+        self.add_members_table.horizontalHeader().setStretchLastSection(True)
+        self.verticalLayout_26.addWidget(self.add_members_table)
         self.horizontalLayout_8.addWidget(self.add_members_list_frame)
         self.verticalLayout_19.addWidget(self.add_members_body_frame)
         self.stackedWidget.addWidget(self.add_members_page)
@@ -791,23 +793,31 @@ class Ui_MainWindow(object):
         self.horizontalLayout.addWidget(self.body)
         MainWindow.setCentralWidget(self.centralwidget)
         self.retranslateUi(MainWindow)
-        self.stackedWidget.setCurrentIndex(2)
-
+        self.stackedWidget.setCurrentIndex(0)
+        self.load_accounts_from_db()
         # ConnectButtons
         self.add_account_button.clicked.connect(self.add_account)
         Ui_MainWindow.self_main_window = self
 
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
-
+    def load_accounts_from_db(self):
+        accounts = db.get_all_accounts()
+        if accounts == None:
+            return
+        for account in accounts:
+            self.add_account(account["phone"], account["api_id"], account["api_hash"])
+    
     def add_account_to_list(self):
-        groups = add_to_group.load_groups(add_to_group.current_client)
-        add_to_group.accounts[add_to_group.current_client] = groups
-        add_to_group.client_list[add_to_group.current_client] = add_to_group.current_phone
+        groups = add_to_group.load_groups(add_to_group.last_added_client)
+        add_to_group.accounts[add_to_group.last_added_client] = groups
+        add_to_group.client_list[add_to_group.last_added_client] = add_to_group.current_phone
+        db.insert_account(add_to_group.current_phone, add_to_group.last_added_client.api_id, add_to_group.last_added_client.api_hash)
         self.accounts_list_show()
 
     def accounts_list_show(self):
         index = 1
         self.accounts_list.clear()
+
         for account in add_to_group.accounts.keys():
                 new_item = QtWidgets.QListWidgetItem()
                 font = QtGui.QFont()
@@ -824,18 +834,28 @@ class Ui_MainWindow(object):
         self.accounts_list.setStyleSheet('font: 12pt "MS Shell Dlg 2";')
         # self.accounts_list.setLayout(formLayout)
 
-    def add_account(self):
-        phone = self.phone_input.text()
-        api_id = self.api_id_input.text()
-        api_hash = self.api_hash_input.text()
+    def add_account(self, phone = None, api_id = None, api_hash = None):
+        from_input = False
+        if phone == None or api_id == None or api_hash == None:
+            phone = self.phone_input.text()
+            api_id = self.api_id_input.text()
+            api_hash = self.api_hash_input.text()
+            from_input = True
+        
         if phone == "" or api_id == "" or api_hash == "":
                 self.accounts_danger_text.setText("*All fields are required.")
                 return
-        # time.sleep(1)
-        self.client_data.append({"id":api_id, "hash":api_hash, "phone":phone})
+
+        if db.if_account_exist(phone) and from_input:
+            self.accounts_danger_text.setText("Account already added.")
+            return
+
         client = add_to_group.client_initializer(api_id, api_hash, phone)
+
         if client == False:
             Ui_Form.verify_account()
+        elif client == CONNECT_ERROR:
+            self.accounts_danger_text.setText(CONNECT_ERROR)
         else:
             self.add_account_to_list()
     def settings_page_show(self):
@@ -885,16 +905,16 @@ class Ui_MainWindow(object):
         self.progress_label.setText(_translate("MainWindow", "Progress"))
         self.start_button.setText(_translate("MainWindow", "Start"))
         self.stop_adding_button.setText(_translate("MainWindow", "Stop"))
-        item = self.add_members_list.horizontalHeaderItem(0)
+        item = self.add_members_table.horizontalHeaderItem(0)
         item.setText(_translate("MainWindow", "Username"))
-        item = self.add_members_list.horizontalHeaderItem(1)
+        item = self.add_members_table.horizontalHeaderItem(1)
         item.setText(_translate("MainWindow", "Account"))
-        item = self.add_members_list.horizontalHeaderItem(2)
+        item = self.add_members_table.horizontalHeaderItem(2)
         item.setText(_translate("MainWindow", "Process"))
     def load_groups_add_members_button(self):
         self.load_groups(add_members= True)
     def load_groups_scrape_button(self):
-        self.load_groups(scrape= True)
+        self.load_groups(scrape = True)
     @staticmethod
     def load_groups(add_members = False, scrape = False):
         if add_members:
@@ -904,7 +924,7 @@ class Ui_MainWindow(object):
 
         if add_to_group.accounts == {}:
             return
-        group_names = add_to_group.load_group_names(add_to_group.get_account_groups(current_client=True))
+        group_names = add_to_group.load_group_names(add_to_group.get_account_groups(main_client=True))
 
         if group_names == []:
             return
@@ -918,16 +938,9 @@ class Ui_MainWindow(object):
             elif scrape:
                 Ui_MainWindow.self_main_window.scraped_groups_list.addItem(new_item)
     def scrape_members(self,group_index):
-        # self.thread = QtCore.QThread()
-        # self.worker = ScrapeMembersThread(group_index)
-        # self.worker.moveToThread(self.thread)
-        # self.thread.started.connect(self.worker.run)
-        # self.worker.finished.connect(self.thread.quit)
-        # self.thread.start()
         try:
-            group = add_to_group.get_account_groups(current_client=True, group_index=int(group_index)-1)
-            self.members_to_add = Scraper.scrape_members(add_to_group.current_client, group)
-            print(self.members_to_add)
+            group = add_to_group.get_account_groups(main_client=True, group_index=int(group_index)-1)
+            self.members_to_add = scraper.scrape_members(add_to_group.main_client, group)
             self.show_scraped_memebers()
         except Exception as ex:
             print(ex)
@@ -975,10 +988,11 @@ class Ui_MainWindow(object):
         self.choose_group_input_2.setText(group_index)
     def add_members(self, group_index):
         try:
-            self.selected_group = add_to_group.get_account_groups(current_client=True,group_index = int(group_index)-1)
+            self.selected_group = add_to_group.get_account_groups(main_client=True,group_index = int(group_index)-1)
 
             if True:
                 add_to_group.get_already_added_users(self.selected_group) 
+
             self.adding_progressbar.setMinimum(0)
             self.adding_progressbar.setMaximum(len(self.members_to_add))
             self.adding_progressbar.setHidden(False)
@@ -992,8 +1006,8 @@ class Ui_MainWindow(object):
             self.worker.finished.connect(self.thread.quit)
             self.worker.finished.connect(self.enable_start_button)
             self.thread.start()
-        except:
-            print(12)
+        except error as ex:
+            print(ex)
     def update_progressbar(self):
         value = self.adding_progressbar.value() + 1
         self.adding_progressbar.setValue(value)
@@ -1004,32 +1018,7 @@ class Ui_MainWindow(object):
     def enable_start_button(self):
         self.start_button.setEnabled(True)
 import resources_rc
-class ScrapeMembersThread(QtCore.QThread):
-    def __init__(self, group_index):
-        super().__init__()
-        self.group_index = group_index
-    def get_or_create_eventloop(self):
-        try:
-            return asyncio.get_event_loop()
-        except RuntimeError as ex:
-            if "There is no current event loop in thread" in str(ex):
-                loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            return asyncio.get_event_loop()
-    def run(self):
-        loop = self.get_or_create_eventloop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(self.scrape(loop))
-        loop.close()
-    async def scrape(self,loop):
-        print(loop)
-        try:
-            group = add_to_group.get_account_groups(current_client=True, group_index=int(self.group_index)-1)
-            Ui_MainWindow.members_to_add = await Scraper.scrape_members(add_to_group.current_client, group,loop)
-            
-            Ui_MainWindow.show_scraped_memebers(Ui_MainWindow.self_main_window)
-        except Exception as ex:
-            print(ex)
+
 class AddMembersThread(QtCore.QThread):
     update_progress = QtCore.pyqtSignal()
     finished = QtCore.pyqtSignal()
@@ -1064,7 +1053,6 @@ class AddMembersThread(QtCore.QThread):
                                                                         "width: 10px;\n"
                                                                         "})")
         try:
-            loop  = self.get_or_create_eventloop()
             print(self.loop)
             asyncio.set_event_loop(self.loop)
             self.loop.run_until_complete(self.add())
@@ -1075,23 +1063,26 @@ class AddMembersThread(QtCore.QThread):
     async def add(self):
         i = 0
         for member in self.members:
-            # if i % Ui_MainWindow.self_main_window.settings.members_per_batch == 0:
+            # if i % Ui_MainWindow.self_main_window.settings.users_per_batch == 0:
             #     await asyncio.sleep(Ui_MainWindow.self_main_window.settings.batches_interval)
             if self.stop_adding:
                 Ui_MainWindow.self_main_window.start_button.setEnabled(True)
                 break
+
             proccess = await add_to_group.add_members(member, Ui_MainWindow.self_main_window.selected_group.title)
 
-            Ui_MainWindow.self_main_window.add_members_list.insertRow(i)
-            Ui_MainWindow.self_main_window.add_members_list.setItem(i,0,QtWidgets.QTableWidgetItem(member["name"]))
-            Ui_MainWindow.self_main_window.add_members_list.setItem(i,1, QtWidgets.QTableWidgetItem(add_to_group.client_list[add_to_group.current_client]))
-            Ui_MainWindow.self_main_window.add_members_list.setItem(i,2,QtWidgets.QTableWidgetItem(proccess))
+            Ui_MainWindow.self_main_window.add_members_table.insertRow(i)
+            Ui_MainWindow.self_main_window.add_members_table.setItem(i,0,QtWidgets.QTableWidgetItem(member["name"]))
+            Ui_MainWindow.self_main_window.add_members_table.setItem(i,1, QtWidgets.QTableWidgetItem(add_to_group.client_list[add_to_group.current_client]))
+            Ui_MainWindow.self_main_window.add_members_table.setItem(i,2,QtWidgets.QTableWidgetItem(proccess))
+            Ui_MainWindow.self_main_window.add_members_table.selectRow(i)
             i+=1
-            print("emit")
             self.update_progress.emit()
             await asyncio.sleep(Ui_MainWindow.self_main_window.settings.user_add_time_interval)
+
             if proccess != ALREADY_ADDED:
                 add_to_group.change_client()
+
         self.finished.emit()
     def stop_adding_members(self):
         self.stop_adding = True
@@ -1111,9 +1102,8 @@ class AddMembersThread(QtCore.QThread):
                                                                         "})")
                
 class Ui_Form(object):
-    current_client = None
-    current_phone = None
     code = None
+
     def setupUi(self, Form):
         Form.setObjectName("Form")
         Form.resize(411, 145)
@@ -1147,14 +1137,14 @@ class Ui_Form(object):
         if Ui_Form.code == "":
             return
         try:
-            add_to_group.current_client.sign_in(add_to_group.current_phone,Ui_Form.code, phone_code_hash= add_to_group.current_phone_hash.phone_code_hash)
+            add_to_group.last_added_client.sign_in(add_to_group.current_phone,Ui_Form.code, phone_code_hash= add_to_group.current_phone_hash.phone_code_hash)
         except telethon.errors.SessionPasswordNeededError:
             has_not_password= False
             Ui_Password.show_password_window()
 
         if has_not_password:
-            add_to_group.current_client.sign_in(add_to_group.current_phone, Ui_Form.code)
-            if add_to_group.current_client.is_user_authorized():
+            add_to_group.last_added_client.sign_in(add_to_group.current_phone, Ui_Form.code)
+            if add_to_group.last_added_client.is_user_authorized():
                 Ui_MainWindow.add_account_to_list(Ui_MainWindow.self_main_window)
 
         Ui_Form.Form.hide()
@@ -1208,7 +1198,7 @@ class Ui_Password(object):
         if password == "":
             return
 
-        add_to_group.current_client.sign_in(password = str(password))
+        add_to_group.last_added_client.sign_in(password = str(password))
         Ui_MainWindow.add_account_to_list(Ui_MainWindow.self_main_window)
         Ui_Password.Form.hide()
 
@@ -1232,34 +1222,56 @@ class eventFilterClass(QtCore.QObject):
             menu.addAction("Remove")
 
             if menu.exec_(event.globalPos()):
-                selected_client = source.itemAt(event.pos())
-                key_list = list(add_to_group.client_list.keys())
-                val_list = list(add_to_group.client_list.values())
-                client_phone = selected_client.text().split(" ")[1]
-                client_index = val_list.index(client_phone)
-                client = key_list[client_index]
-                Ui_MainWindow.self_main_window.accounts_list.clear()
-                add_to_group.accounts.remove(client)
-                Ui_MainWindow.accounts_list_show(Ui_MainWindow.self_main_window)
+                # Get client for remove
+                try:
+                    selected_client = source.itemAt(event.pos())
+                    key_list = list(add_to_group.client_list.keys())
+                    val_list = list(add_to_group.client_list.values())
+                    client_phone = selected_client.text().split(" ")[1]
+                    client_index = val_list.index(client_phone)
+                    client = key_list[client_index]
+
+                    # Disconnect client
+                    client.disconnect()
+
+                    # Remove from storage
+                    del add_to_group.accounts[client]
+                    del add_to_group.client_list[client]
+
+                    # Delete from db
+                    account = db.get_account_by_phone(client_phone)
+                    if account != []:
+                        db.delete_account(account[0]["id"])
+                    # Check if is main
+                    if add_to_group.is_client_main(client):
+                        if add_to_group.client_list != {}:
+                            add_to_group.set_main_client(client = list(add_to_group.client_list.keys())[0])
+                        else:
+                            add_to_group.set_main_client()
+
+                    Ui_MainWindow.self_main_window.settings.load_account_dropdown()
+                    Ui_MainWindow.accounts_list_show(Ui_MainWindow.self_main_window)
+                except:
+                    Ui_MainWindow.self_main_window.accounts_danger_text.setText("Problem occured. Try again later.")
             return True
         return super().eventFilter(source,event)
-
-class Ui_Settings:
-    members_per_batch = 20
+       
+class Ui_Settings(object):
+    users_per_batch = 20
     batches_interval=60
     user_add_time_interval = 10
-
-    def setupUi(self, Ui_Settings):
-        Ui_Settings.setObjectName("Ui_Settings")
-        Ui_Settings.resize(318, 300)
+    id = None
+    def setupUi(self, Settings):
+        Settings.setObjectName("Ui_Settings")
+        Settings.resize(318, 300)
         icon = QtGui.QIcon()
         icon.addFile(u":/images/logo2.png", QtCore.QSize(), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        Ui_Settings.setWindowIcon(icon)
-        self.verticalLayout = QtWidgets.QVBoxLayout(Ui_Settings)
+        Settings.setWindowIcon(icon)
+        self.verticalLayout = QtWidgets.QVBoxLayout(Settings)
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout.setSpacing(0)
         self.verticalLayout.setObjectName("verticalLayout")
-        self.settings_body_frame = QtWidgets.QFrame(Ui_Settings)
+        self.settings_body_frame = QtWidgets.QFrame(Settings)
         self.settings_body_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.settings_body_frame.setFrameShadow(QtWidgets.QFrame.Raised)
         self.settings_body_frame.setObjectName("settings_body_frame")
@@ -1294,15 +1306,13 @@ class Ui_Settings:
         self.verticalLayout_5.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout_5.setSpacing(0)
         self.verticalLayout_5.setObjectName("verticalLayout_5")
-        self.checkBox = QtWidgets.QCheckBox(self.frame)
-        self.checkBox.setMaximumSize(QtCore.QSize(200, 16777215))
-        self.checkBox.setObjectName("checkBox")
-        self.checkBox.setFont(font)
-        self.verticalLayout_5.addWidget(self.checkBox)
-        self.add_by_username_checkbox = QtWidgets.QCheckBox(self.frame)
-        self.add_by_username_checkbox.setObjectName("add_by_username_checkbox")
-        self.add_by_username_checkbox.setFont(font)
-        self.verticalLayout_5.addWidget(self.add_by_username_checkbox)
+        self.only_megagroups_checkbox = QtWidgets.QCheckBox(self.frame)
+        self.only_megagroups_checkbox.setMaximumSize(QtCore.QSize(200, 16777215))
+        self.only_megagroups_checkbox.setObjectName("only_megagroups_checkbox")
+        self.only_megagroups_checkbox.setFont(font)
+        self.only_megagroups_checkbox.setChecked(True)
+        self.only_megagroups_checkbox.stateChanged.connect(self.set_only_megagroups)
+        self.verticalLayout_5.addWidget(self.only_megagroups_checkbox)
         self.skip_added_users_checkbox = QtWidgets.QCheckBox(self.frame)
         self.skip_added_users_checkbox.setObjectName("skip_added_users_checkbox")
         self.skip_added_users_checkbox.setChecked(True)
@@ -1355,6 +1365,14 @@ class Ui_Settings:
         self.label_3.setObjectName("label_3")
         self.label_3.setFont(font)
         self.verticalLayout_8.addWidget(self.label_3)
+        self.label_4 = QtWidgets.QLabel(self.frame_4)
+        self.label_4.setObjectName("label_4")
+        self.verticalLayout_8.addWidget(self.label_4)
+        self.main_accounts_dropdown = QtWidgets.QComboBox(self.frame_4)
+        self.main_accounts_dropdown.setObjectName("main_accounts_dropdown")
+        self.main_accounts_dropdown.setMaximumSize(QtCore.QSize(500,20))
+        self.main_accounts_dropdown.currentTextChanged.connect(self.get_selected_account)
+        self.verticalLayout_8.addWidget(self.main_accounts_dropdown)
         self.horizontalLayout.addWidget(self.frame_4)
         self.frame_6 = QtWidgets.QFrame(self.frame_3)
         font = QtGui.QFont()
@@ -1367,6 +1385,7 @@ class Ui_Settings:
         self.verticalLayout_9.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout_9.setSpacing(0)
         self.verticalLayout_9.setObjectName("verticalLayout_9")
+        self.verticalLayout_9.setContentsMargins(0, 0, 0, 35)
         self.user_add_time_interval_input = QtWidgets.QLineEdit(self.frame_6)
         self.user_add_time_interval_input.setMaximumSize(QtCore.QSize(30, 16777215))
         self.user_add_time_interval_input.returnPressed.connect(self.set_user_add_time_interval)
@@ -1381,13 +1400,13 @@ class Ui_Settings:
         self.batches_interval_input.setFont(font)
         self.batches_interval_input.setObjectName("batches_interval_input")
         self.verticalLayout_9.addWidget(self.batches_interval_input)
-        self.members_per_batch_input = QtWidgets.QLineEdit(self.frame_6)
-        self.members_per_batch_input.setMaximumSize(QtCore.QSize(30, 16777215))
-        self.members_per_batch_input.returnPressed.connect(self.set_members_per_batch)
-        self.members_per_batch_input.setFont(font)
-        self.members_per_batch_input.setText("")
-        self.members_per_batch_input.setObjectName("members_per_batch_input")
-        self.verticalLayout_9.addWidget(self.members_per_batch_input)
+        self.users_per_batch_input = QtWidgets.QLineEdit(self.frame_6)
+        self.users_per_batch_input.setMaximumSize(QtCore.QSize(30, 16777215))
+        self.users_per_batch_input.returnPressed.connect(self.set_users_per_batch)
+        self.users_per_batch_input.setFont(font)
+        self.users_per_batch_input.setText("")
+        self.users_per_batch_input.setObjectName("users_per_batch_input")
+        self.verticalLayout_9.addWidget(self.users_per_batch_input)
         self.horizontalLayout.addWidget(self.frame_6, 0, QtCore.Qt.AlignRight)
         self.verticalLayout_4.addWidget(self.frame_3)
         self.verticalLayout_3.addWidget(self.frame_2)
@@ -1416,21 +1435,52 @@ class Ui_Settings:
         self.settings_menu.addTab(self.Info, "")
         self.verticalLayout_2.addWidget(self.settings_menu)
         self.verticalLayout.addWidget(self.settings_body_frame)
-        self.retranslateUi(Ui_Settings)
+        self.retranslateUi(Settings)
         self.settings_menu.setCurrentIndex(0)
-        QtCore.QMetaObject.connectSlotsByName(Ui_Settings)
+        self.load_account_dropdown()
+        self.load_settings_from_db()
+        QtCore.QMetaObject.connectSlotsByName(Settings)
+    def load_settings_from_db(self):
+        settings = db.get_all_settings()
+        if settings != []:
+            self.id = settings[0]["id"]
+
+            self.only_megagroups_checkbox.setChecked(settings["only_megagroups"])
+            self.recently_active_checkbox.setChecked(settings["scrape_active_users"])
+            self.multi_users_settings_checkbox.setChecked(settings["automatic_settings_for_multy_accounts"])   
+            self.skip_added_users_checkbox.setChecked(settings["skip_added_users"])
+            
+            self.user_add_time_interval = settings["users_add_interval"]
+            self.user_add_time_interval_input.setText(str(settings["users_add_interval"]))
+
+            self.users_per_batch = settings["users_per_batch"]
+            self.users_per_batch_input.setText(str(settings["users_per_batch"]))
+
+            self.batches_interval = settings["users_batches_interval"]
+            self.batches_interval_input.setText(str(settings["users_batches_interval"]))
+        else:
+            self.id = db.insert_settings(self.only_megagroups_checkbox.isChecked(),
+                                         self.skip_added_users_checkbox.isChecked(),
+                                         self.multi_users_settings_checkbox.isChecked(),
+                                         self.recently_active_checkbox.isChecked(),
+                                         self.user_add_time_interval,
+                                         self.batches_interval,
+                                         self.users_per_batch
+                                         )
+    def set_only_megagroups(self):
+        add_to_group.get_megagroups_only = self.only_megagroups_checkbox.isChecked()
+        db.update_settings(self.id)
     def set_recently_active_users(self):
-        Scraper.scrape_only_recently_active = self.recently_active_checkbox.isChecked()
-        print("from settings:",Scraper.scrape_only_recently_active)
+        scraper.scrape_only_recently_active = self.recently_active_checkbox.isChecked()
+        db.update_settings(self.id, scrape_only_recently_active_users=self.recently_active_checkbox.isChecked())
     def set_multi_users_settings(self):
-        print(self.multi_users_settings_checkbox.isChecked())
         if self.multi_users_settings_checkbox.isChecked():
             if len(add_to_group.accounts) <= 2:
                 self.multi_users_settings_checkbox.setChecked(False)
                 return
-            self.members_per_batch = len(add_to_group.accounts)
-            self.members_per_batch_input.setText(str(self.members_per_batch))
-            add_to_group.user_add_time_interval = 4
+            self.users_per_batch = len(add_to_group.accounts)
+            self.users_per_batch_input.setText(str(self.users_per_batch))
+            self.user_add_time_interval = 4
             self.user_add_time_interval_input.setText(str(add_to_group.user_add_time_interval))
             if len(add_to_group.accounts )>12:
                 self.batches_interval = 15
@@ -1438,8 +1488,10 @@ class Ui_Settings:
             else:
                 self.batches_interval = 60 - (len(add_to_group.accounts)*4)
                 self.batches_interval_input.setText(str(self.batches_interval))
+            db.update_settings(self.id,users_per_batch = self.users_per_batch, users_add_interval = self.user_add_time_interval,users_batches_interval = self.batches_interval)
     def set_skip_added_users(self):
         add_to_group.skip_added_users = self.skip_added_users_checkbox.isChecked()
+        db.update_settings(self.id,skip_added_users=self.skip_added_users_checkbox.isChecked())
     def set_user_add_time_interval(self):
         try:
             time = int(self.user_add_time_interval_input.text())
@@ -1447,50 +1499,68 @@ class Ui_Settings:
                 print(0)
                 return
         except:
-            self.user_add_time_interval = 10
+            time = 10
             self.user_add_time_interval_input.setText('10')
-            return
 
         self.user_add_time_interval = time
         self.multi_users_settings_checkbox.setChecked(False)
-    def set_members_per_batch(self):
+        db.update_settings(self.id, users_add_interval=time)
+    def set_users_per_batch(self):
         try:
-            members = int(self.members_per_batch_input.text())
-            if members == "":
+            users = int(self.users_per_batch_input.text())
+            if users == "":
                 return
         except:
-            self.members_per_batch = 20
-            self.members_per_batch_input.setText('20')
-            return
+            users = 20
+            self.users_per_batch_input.setText('20')
 
-        self.members_per_batch = members
+        self.users_per_batch = users
         self.multi_users_settings_checkbox.setChecked(False)
+        db.update_settings(self.id, users_per_batch=users)
     def set_batches_interval(self):
         try:
             time = int(self.batches_interval_input.text())
             if time == "":
                 return
         except:
-            self.batches_interval = 60
+            time = 60
             self.batches_interval_input.setText('60')
-            return
+            
         self.batches_interval = time
         self.multi_users_settings_checkbox.setChecked(False)
-    
+        db.update_settings(self.id, users_batches_interval=time)
+    def load_account_dropdown(self):
+        print(add_to_group.client_list)
+        if hasattr(self, "main_accounts_dropdown"):
+            accounts = list(add_to_group.client_list.values())
+            if accounts == []:
+                return
+            self.delete_accounts_from_dropdown()
+            self.main_accounts_dropdown.addItems(accounts)
+    def delete_accounts_from_dropdown(self):
+        self.main_accounts_dropdown.clear()
+    def get_selected_account(self):
+        phone = self.main_accounts_dropdown.currentText()
+        if phone == "":
+            return
+        
+        add_to_group.set_main_client(phone = phone)
+        Ui_MainWindow.load_groups_scrape_button(Ui_MainWindow.self_main_window)
+        Ui_MainWindow.load_groups_add_members_button(Ui_MainWindow.self_main_window)
     def retranslateUi(self, Ui_Settings):
         _translate = QtCore.QCoreApplication.translate
         Ui_Settings.setWindowTitle(_translate("Ui_Settings", "Settings"))
-        self.checkBox.setText(_translate("Ui_Settings", "Add members by Id"))
-        self.add_by_username_checkbox.setText(_translate("Ui_Settings", "Add members by username"))
+        self.only_megagroups_checkbox.setText(_translate("Ui_Settings", "Get only 'Megagroups'"))
         self.skip_added_users_checkbox.setText(_translate("Ui_Settings", "Skip already added users"))
         self.multi_users_settings_checkbox.setText(_translate("Ui_Settings", "Automatic settings for multiple accounts"))
         self.recently_active_checkbox.setText(_translate("Ui_Settings", "Scrape only recently active users"))
         self.label.setText(_translate("Ui_Settings", "Interval between member add(secs)"))
         self.label_2.setText(_translate("Ui_Settings", "Interval between memeber batches(secs)"))
         self.label_3.setText(_translate("Ui_Settings", "Memebrs per batch"))
+        self.label_4.setText(_translate("Ui_Settings", "Choose main account"))
         self.user_add_time_interval_input.setPlaceholderText(_translate("Ui_Settings", "10"))
         self.batches_interval_input.setPlaceholderText(_translate("Ui_Settings", "60"))
-        self.members_per_batch_input.setPlaceholderText(_translate("Ui_Settings", "20"))
+        self.users_per_batch_input.setPlaceholderText(_translate("Ui_Settings", "20"))
         self.settings_menu.setTabText(self.settings_menu.indexOf(self.Settings), _translate("Ui_Settings", "Settings"))
         self.textEdit.setHtml(_translate("Ui_Settings", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
         "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"

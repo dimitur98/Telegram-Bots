@@ -2,10 +2,10 @@ from telethon.tl.types import  UserStatusRecently
 
 class Scraper:
     scrape_only_recently_active = True
-    @staticmethod
-    def scrape_members(client, target_group, already_added = False):
+    
+    def scrape_members(self, client, target_group, already_added = False):
         all_participants = client.get_participants(target_group, aggressive=True)
-        # all_participants=await loop.run_in_executor(_executor, await client.get_participants(target_group, aggressive=True))
+
         scraped_members = []
         for user in all_participants:
             # if user.status ==  UserStatusRecently():

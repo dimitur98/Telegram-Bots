@@ -19,16 +19,20 @@ FLOOD_ERROR = "Too many request, should wait some time"
 USER_ACCOUNT_RESTRICTIONS = "The user's privacy settings don't allow to be added"
 OTHER_ERROR = "Error has occured"
 NO_USERNAME = "User has no username"
-
+CONNECT_ERROR = "Error with connection. Try again after a while or try with other account"
+scraper = Scraper()
 class Add_To_Group:
     client_list = {}
     accounts = {}
+    main_client = None
     current_client = None
+    last_added_client = None
     current_phone = None
     current_phone_hash = None
     mode = 1
     already_added_users = []
     skip_added_users = True
+    get_megagroups_only = True
 
     def change_client(self,client = None,deleteClient = False):
         if client == None:
@@ -62,8 +66,10 @@ class Add_To_Group:
         ))
         for group in result.chats:
             try:
-                 if group.megagroup== True:
-                    groups.append(group)
+                if self.get_megagroups_only:
+                    if group.megagroup == False:
+                        continue
+                groups.append(group)
             except:
                 continue
         
@@ -90,8 +96,23 @@ class Add_To_Group:
             return key_list
         else:
             return key_list[index]
-
-    def get_account_groups(self,current_client = False,client = None, client_index = None, group_index = None):
+    def set_main_client(self, phone = None, client = None):
+        if phone == None and client == None:
+            self.main_client = None
+            return
+        if phone != None:
+            clients = list(self.client_list.keys())
+            phones = list(self.client_list.values())
+            index = phones.index(phone)
+            self.main_client = clients[index]
+        elif client != None:
+            self.main_client = client
+    def is_client_main(self, client):
+        if client == self.main_client:
+            return True
+        else:
+            return False
+    def get_account_groups(self,current_client = False,main_client = False,client = None, client_index = None, group_index = None):
         if(self.accounts == {}):
             return
 
@@ -101,6 +122,9 @@ class Add_To_Group:
         
         if current_client:
             position = key_list.index(self.current_client)
+            output = value_list[position]
+        elif main_client:
+            position = key_list.index(self.main_client)
             output = value_list[position]
         elif client != None:
             position = key_list.index(client)
@@ -123,7 +147,6 @@ class Add_To_Group:
         g_index = key_list[position]
 
         target_group=self.get_account_groups(current_client=True,group_index = g_index)
-        # target_group = self.get_account_groups(client = list(self.accounts.keys())[0],group_index=g_index)
         return InputPeerChannel(target_group.id,target_group.access_hash)
     async def get_new_instance_of_group(self, group_name):
         last_date = None
@@ -160,13 +183,20 @@ class Add_To_Group:
     def client_initializer(self,api_id, api_hash, phone):
         try:
             client = TelegramClient(phone, api_id, api_hash)
-            self.current_client = client
+
+            if self.current_client == None:
+                self.current_client = client
+
+            if self.main_client == None:
+                self.main_client = client
+
+            self.last_added_client = client
             self.current_phone = phone
-        except KeyError:
-            #todo
-            print("key error")
-            return
-        client.connect()
+       
+            client.connect()
+        except:
+            print("connect error")
+            return CONNECT_ERROR
         if not client.is_user_authorized():
             self.current_phone_hash = client.send_code_request(phone)
             return False
@@ -186,7 +216,7 @@ class Add_To_Group:
                 members_list.append(user) 
             return members_list
     def get_already_added_users(self, group):
-        self.already_added_users = Scraper.scrape_members(self.current_client, group, already_added=True)
+        self.already_added_users = scraper.scrape_members(self.current_client, group, already_added=True)
 
     async def add_members(self,user, group_name):
         client = self.current_client
@@ -212,8 +242,7 @@ class Add_To_Group:
             elif self.mode == 2:
                 user_to_add = InputPeerUser(int(user['id']), int(user['access_hash']))
                 
-            print(1)
-            await client(InviteToChannelRequest(target_group_entity,[user_to_add]))
+            await client(InviteToChannelRequest(target_group_entity,users = [user_to_add]))
             return SUCCESSFULL_ADDED
         except PeerFloodError as e:
             print("flood")
