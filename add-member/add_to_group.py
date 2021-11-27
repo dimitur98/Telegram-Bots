@@ -1,11 +1,11 @@
 #!/bin/env python3
 import asyncio
 from logging import currentframe
-from telethon.client import account, telegramclient
+from telethon import client
 from telethon.sync import *
 from telethon.tl.functions.messages import GetDialogsRequest
 from telethon.tl.types import InputPeerEmpty, InputPeerChannel, InputPeerUser
-from telethon.errors.rpcerrorlist import FloodWaitError, PeerFloodError, UserPrivacyRestrictedError
+from telethon.errors.rpcerrorlist import  PeerFloodError, UserBannedInChannelError, UserChannelsTooMuchError, UserKickedError, UserNotMutualContactError, UserPrivacyRestrictedError, UsernameNotOccupiedError, UsersTooMuchError
 from telethon.tl.functions.channels import InviteToChannelRequest
 from scraper import *
 import csv
@@ -13,13 +13,21 @@ import traceback
 
 
 
-SUCCESSFULL_ADDED = "Added"
-ALREADY_ADDED = "User is already added"
-FLOOD_ERROR = "Too many request, should wait some time"
-USER_ACCOUNT_RESTRICTIONS = "The user's privacy settings don't allow to be added"
-OTHER_ERROR = "Error has occured"
-NO_USERNAME = "User has no username"
-CONNECT_ERROR = "Error with connection. Try again after a while or try with other account"
+SUCCESSFULL_ADDED = "Added."
+ALREADY_ADDED = "User is already added."
+FLOOD_ERROR = "Too many request, should wait some time."
+USER_ACCOUNT_RESTRICTIONS = "The user's privacy settings don't allow to be added."
+OTHER_ERROR = "Error has occured."
+NO_USERNAME = "User has no username."
+CONNECT_ERROR = "Error with connection. Try again after a while or try with other account."
+MAX_USERS_EXCEED_ERROR = "The maximum number of users has been exceeded."
+USER_BANNED_IN_CHANNEL_ERROR = "You're banned from sending messages in supergroups/channels."
+TOO_MANY_CHATS_ERROR = "The user is in too many channels/supergroups."
+KICKED_USER_ERROR = "The user was kicked from this supergroup/channel."
+NOT_MUTAL_ERROR = "The user is not a mutual contact."
+NOT_USED_USERNAME_ERROR = "The username is not in use by anyone else yet." 
+ACCOUNT_NOT_PARTICIPATE_IN_GROUP = "Account not participate in the group."
+
 scraper = Scraper()
 class Add_To_Group:
     client_list = {}
@@ -37,8 +45,10 @@ class Add_To_Group:
     def change_client(self,client = None,deleteClient = False):
         if client == None:
             client = self.current_client
+        if self.accounts == {}:
+            return
 
-        clients = self.get_clients()
+        clients = list(self.accounts.keys())
         clientIndex = clients.index(client) + 1
 
         if deleteClient:
@@ -49,7 +59,7 @@ class Add_To_Group:
             clientIndex = 0
         self.current_client = clients[clientIndex]
         return clients[clientIndex]
-    def load_groups(self,client = None, index = None):
+    async def load_groups(self,client = None, index = None):
         last_date = None
         chunk_size = 200
         groups = []
@@ -57,7 +67,7 @@ class Add_To_Group:
         if client == None:
             client = self.current_client
         
-        result = client(GetDialogsRequest(
+        result = await client(GetDialogsRequest(
             offset_date=last_date,
             offset_id=0,
             offset_peer=InputPeerEmpty(),
@@ -66,9 +76,6 @@ class Add_To_Group:
         ))
         for group in result.chats:
             try:
-                if self.get_megagroups_only:
-                    if group.megagroup == False:
-                        continue
                 groups.append(group)
             except:
                 continue
@@ -83,8 +90,16 @@ class Add_To_Group:
         group_names = {}
 
         for group in groups:
-            group_names[i] = group.title
-            i+=1
+            try:
+                if self.get_megagroups_only:
+                        if group.megagroup == False:
+                            continue
+
+                group_names[i] = group.title
+                i+=1
+            except:
+                continue
+
         return group_names
     def get_clients(self, index = None):
         if(self.accounts == {}):
@@ -132,9 +147,17 @@ class Add_To_Group:
         elif client_index != None:
             output = value_list[client_index]
         
+        if self.get_megagroups_only:
+            megagroups = []
+            for group in output:
+                try:
+                    if group.megagroup == True:
+                        megagroups.append(group)
+                except:
+                    continue
+            output = megagroups
         if group_index != None:
             output = output[group_index]
-
         return output
     def client_group_select(self,group_name,groups):
         if groups == []:
@@ -143,6 +166,10 @@ class Add_To_Group:
         group_names = self.load_group_names(groups)
         key_list = list(group_names.keys())
         val_list = list(group_names.values())
+
+        if group_name not in val_list:
+            return None
+
         position = val_list.index(group_name)
         g_index = key_list[position]
 
@@ -180,25 +207,24 @@ class Add_To_Group:
 
         target_group=groups[int(g_index)]
         return InputPeerChannel(target_group.id,target_group.access_hash)
-    def client_initializer(self,api_id, api_hash, phone):
+    async def client_initializer(self,api_id, api_hash, phone):
         try:
             client = TelegramClient(phone, api_id, api_hash)
 
             if self.current_client == None:
                 self.current_client = client
-
             if self.main_client == None:
                 self.main_client = client
 
             self.last_added_client = client
             self.current_phone = phone
        
-            client.connect()
+            await client.connect()
         except:
             print("connect error")
             return CONNECT_ERROR
-        if not client.is_user_authorized():
-            self.current_phone_hash = client.send_code_request(phone)
+        if not await client.is_user_authorized():
+            self.current_phone_hash = await client.send_code_request(phone)
             return False
         return client
 
@@ -216,12 +242,18 @@ class Add_To_Group:
                 members_list.append(user) 
             return members_list
     def get_already_added_users(self, group):
-        self.already_added_users = scraper.scrape_members(self.current_client, group, already_added=True)
+         loop = asyncio.get_event_loop()
+         asyncio.set_event_loop(loop)    
+         self.already_added_users =loop.run_until_complete(scraper.scrape_members(self.main_client, group, already_added=True))
 
     async def add_members(self,user, group_name):
         client = self.current_client
         groups = self.get_account_groups(current_client=True)
         target_group_entity = self.client_group_select(group_name, groups)
+
+        if target_group_entity == None:
+            return ACCOUNT_NOT_PARTICIPATE_IN_GROUP
+
         already_added = False
         user_to_add = None
 
@@ -240,21 +272,27 @@ class Add_To_Group:
                     return NO_USERNAME
                 user_to_add = await client.get_input_entity(user["username"])
             elif self.mode == 2:
-                user_to_add = InputPeerUser(int(user['id']), int(user['access_hash']))
-                
-            await client(InviteToChannelRequest(target_group_entity,users = [user_to_add]))
+                user_to_add = InputPeerUser(user["id"],user["access_hash"])
+
+            await client(InviteToChannelRequest(target_group_entity,[user_to_add]))
             return SUCCESSFULL_ADDED
         except PeerFloodError as e:
-            print("flood")
-            # await asyncio.sleep(10)
             return FLOOD_ERROR
         except UserPrivacyRestrictedError:
-            print("restr")
-            # await asyncio.sleep(10)
             return USER_ACCOUNT_RESTRICTIONS
+        except UsersTooMuchError:
+            return MAX_USERS_EXCEED_ERROR
+        except UserBannedInChannelError:
+            return USER_BANNED_IN_CHANNEL_ERROR
+        except UserChannelsTooMuchError:
+            return TOO_MANY_CHATS_ERROR
+        except UserKickedError:
+            return KICKED_USER_ERROR
+        except UserNotMutualContactError:
+            return NOT_MUTAL_ERROR
+        except UsernameNotOccupiedError:
+            return NOT_USED_USERNAME_ERROR
         except:
-            # await asyncio.sleep(10)
-            print("asd",traceback.print_exc())
             return OTHER_ERROR
 
        

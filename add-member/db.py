@@ -1,3 +1,4 @@
+from asyncio.windows_events import NULL
 import sqlite3
 
 
@@ -21,11 +22,14 @@ class Db:
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         only_megagroups BOOLEAN NOT NULL,
         skip_added_users BOOLEAN NOT NULL,
-        automatic_settings_for_multy_accounts BOOLEAN NOT NULL,
+        automatic_settings BOOLEAN NOT NULL,
         scrape_active_users BOOLEAN NOT NULL,
         users_add_interval INTEGER NOT NULL,
         users_batches_interval INTEGER NOT NULL,
-        users_per_batch INTEGER NOT NULL
+        users_per_batch INTEGER NOT NULL,
+        users_limit INTEGER,
+        add_users_start_index INTEGER NOT NULL,
+        main_account TEXT NOT NULL
         )
         """
         con.execute(sql)
@@ -44,32 +48,65 @@ class Db:
         con.execute(sql)
         con.close()
 
-    def insert_settings(self,only_megagroups, skip_added_users, atomatic_settings_for_multiple_accounts,scrape_only_recently_active_users,users_add_interval,users_batches_interval,users_per_batch):
-        con = self.get_db_connection().cursor()
+    def insert_settings(self,
+                        only_megagroups,
+                        skip_added_users,
+                        automatic_settings,
+                        scrape_active_users,
+                        users_add_interval,
+                        users_batches_interval,
+                        users_per_batch,
+                        users_limit,
+                        add_users_start_index,
+                        main_account):
+        con = self.get_db_connection()
         
         sql = """INSERT INTO settings
+        (
+            only_megagroups,
+            skip_added_users,
+            automatic_settings,
+            scrape_active_users,
+            users_add_interval,
+            users_batches_interval,
+            users_per_batch,
+            users_limit,
+            add_users_start_index,
+            main_account
+        )
         VALUES(
             :only_megagroups,
             :skip_added_users,
-            :atomatic_settings_for_multiple_accounts,
-            :scrape_only_recently_active_users,
+            :automatic_settings,
+            :scrape_active_users,
             :users_add_interval,
             :users_batches_interval,
-            :users_per_batch
-        )
+            :users_per_batch,
+            :users_limit,
+            :add_users_start_index,
+            :main_account
+        );
         """
         query_params = {
             "only_megagroups": only_megagroups,
             "skip_added_users": skip_added_users,
-            "atomatic_settings_for_multiple_accounts": atomatic_settings_for_multiple_accounts,
-            "scrape_only_recently_active_users":scrape_only_recently_active_users,
+            "automatic_settings": automatic_settings,
+            "scrape_active_users":scrape_active_users,
             "users_add_interval": users_add_interval,
             "users_batches_interval":users_batches_interval,
-            "users_per_batch": users_per_batch
+            "users_per_batch": users_per_batch,
+            "users_limit":users_limit,
+            "add_users_start_index": add_users_start_index,
+            "main_account": main_account
         }
 
         con.execute(sql,query_params)
-        id = con.lastrowid
+        con.commit()
+        
+        sql = """SELECT last_insert_rowid();"""
+        con = con.cursor()
+        con.execute(sql)
+        id = con.fetchone()
         con.close()
 
         return id
@@ -105,11 +142,14 @@ class Db:
     def update_settings(self,id,
                         only_megagroups = None,
                         skip_added_users = None,
-                        automatic_settings_for_multiple_accounts = None,
+                        automatic_settings = None,
                         scrape_only_recently_active_users = None,
                         users_add_interval = None,
                         users_batches_interval = None,
-                        users_per_batch = None):
+                        users_per_batch = None,
+                        users_limit = NULL,
+                        add_users_start_index = None,
+                        main_account = None):
         con = self.get_db_connection()
         
         sql = """ UPDATE settings SET """
@@ -118,30 +158,39 @@ class Db:
             query.append("""only_megagroups = :only_megagroups""")
         if skip_added_users != None:
             query.append("""skip_added_users = :skip_added_users""")
-        if automatic_settings_for_multiple_accounts != None:
-            query.append("""automatic_settings_for_multiple_accounts = :atomatic_settings_for_multiple_accounts""")
+        if automatic_settings != None:
+            query.append("""automatic_settings = :automatic_settings""")
         if scrape_only_recently_active_users != None:
-            query.append("""scrape_only_recently_active_users = :scrape_only_recently_active_users""")
+            query.append("""scrape_active_users = :scrape_active_users""")
         if users_add_interval != None:
             query.append("""users_add_interval = :users_add_interval""")
         if users_batches_interval != None:
             query.append("""users_batches_interval = :users_batches_interval""")
         if users_per_batch != None:
             query.append("""users_per_batch = :users_per_batch""")
-              
+        if users_limit != NULL:
+            query.append("""users_limit = :users_limit""") 
+        if add_users_start_index != None:
+            query.append("""add_users_start_index = :add_users_start_index""") 
+        if main_account != None:
+            query.append("""main_account = :main_account""") 
+
         sql = f"""UPDATE settings SET {",".join(query)} WHERE id = :id"""
-        
+
         query_params = {
             "id": id,
             "only_megagroups": only_megagroups,
             "skip_added_users": skip_added_users,
-            "atomatic_settings_for_multiple_accounts": automatic_settings_for_multiple_accounts,
-            "scrape_only_recently_active_users":scrape_only_recently_active_users,
+            "automatic_settings": automatic_settings,
+            "scrape_active_users":scrape_only_recently_active_users,
             "users_add_interval": users_add_interval,
             "users_batches_interval":users_batches_interval,
-            "users_per_batch": users_per_batch
+            "users_per_batch": users_per_batch,
+            "users_limit": users_limit,
+            "add_users_start_index": add_users_start_index,
+            "main_account": main_account
         }
-
+        
         con.execute(sql,query_params)
         con.commit()
         con.close()

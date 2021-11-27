@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>959</width>
-    <height>600</height>
+    <height>553</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -278,7 +278,7 @@ border-width:4px;</string>
           <string/>
          </property>
          <property name="currentIndex">
-          <number>0</number>
+          <number>2</number>
          </property>
          <widget class="QWidget" name="accounts_page">
           <layout class="QVBoxLayout" name="verticalLayout_5">
@@ -622,7 +622,7 @@ border-width:4px;</string>
                       <x>0</x>
                       <y>0</y>
                       <width>348</width>
-                      <height>448</height>
+                      <height>401</height>
                      </rect>
                     </property>
                    </widget>
@@ -1044,7 +1044,7 @@ color: rgb(50, 141, 189, 255);</string>
                             <x>0</x>
                             <y>0</y>
                             <width>294</width>
-                            <height>216</height>
+                            <height>169</height>
                            </rect>
                           </property>
                          </widget>
@@ -1701,6 +1701,9 @@ border-width:4px;</string>
                 <layout class="QVBoxLayout" name="verticalLayout_26">
                  <item>
                   <widget class="QTableWidget" name="add_members_list">
+                   <property name="autoScroll">
+                    <bool>true</bool>
+                   </property>
                    <attribute name="horizontalHeaderStretchLastSection">
                     <bool>true</bool>
                    </attribute>

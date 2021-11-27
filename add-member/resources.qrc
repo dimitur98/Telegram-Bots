@@ -6,6 +6,9 @@
     <file>4954068.png</file>
     <file>groups.png</file>
   </qresource>
+  <qresource prefix="gifs">
+    <file>scrape_spinner.gif</file>
+  </qresource>
   <qresource prefix="images">
     <file>logo2.png</file>
   </qresource>
