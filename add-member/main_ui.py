@@ -1,17 +1,12 @@
 from asyncio.windows_events import NULL
 from logging import addLevelName, error
 from sqlite3.dbapi2 import Error
-import typing
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QLabel, QLineEdit, QMainWindow, QWidget, QMessageBox
-from telethon.errors.rpcbaseerrors import FloodError
-import telethon.sync
-from telethon.tl.types import InputDialogPeer
+from telethon.errors.rpcerrorlist import PasswordHashInvalidError, PhoneCodeInvalidError, SessionPasswordNeededError
 from add_to_group import *
-from enter_code import *
 from scraper import *
 from db import *
-import sys
 
 RUNNING_ADDING_ERROR = "Add members is started. First stop it!"
 scraper = Scraper()
@@ -35,14 +30,15 @@ class Ui_MainWindow(QMainWindow):
     MainWindow = None
     settings_open = False
     should_wait_seconds = 0
-
+    ui_code = None
     def __init__(self):
         super(Ui_MainWindow,self).__init__()
         self.setupUi()
-    def setupUi(self):        
+    def setupUi(self):   
+        self.ui_code= Ui_Code()     
         self.setObjectName("MainWindow")
         self.resize(940, 600)
-        self.setMinimumSize(940,550)
+        self.setMinimumSize(940,570)
         self.setMaximumSize(1024,700)
         icon = QtGui.QIcon()
         icon.addFile(u":/images/logo2.png", QtCore.QSize(), QtGui.QIcon.Normal, QtGui.QIcon.Off)
@@ -242,7 +238,7 @@ class Ui_MainWindow(QMainWindow):
         self.verticalLayout_7.addWidget(self.input_frame)
         self.accounts_danger_text = QtWidgets.QLabel(self.input_frame)
         self.accounts_danger_text.setObjectName(u"accounts_danger_text")
-        self.accounts_danger_text.setMaximumSize(QtCore.QSize(200, 15))
+        self.accounts_danger_text.setMaximumSize(QtCore.QSize(200, 25))
         self.accounts_danger_text.setStyleSheet(u"color: rgb(255, 0, 0);font: 9pt \"MS Shell Dlg 2\";")
         self.accounts_danger_text.setWordWrap(True)
         self.verticalLayout_8.addWidget(self.accounts_danger_text)
@@ -842,7 +838,7 @@ class Ui_MainWindow(QMainWindow):
                                               "border-style:outset;\n"
                                               "border-width:4px;")
         self.stop_adding_button.setObjectName("stop_adding_button")
-        self.stop_adding_button.clicked.connect(self.stop_adding_members)
+        self.stop_adding_button.clicked.connect(lambda x: self.stop_adding_members(show_text=True))
         self.verticalLayout_6.addWidget(self.stop_adding_button)
         self.verticalLayout_6.setSpacing(7)
         self.verticalLayout_23.addWidget(self.add_members_start_frame)
@@ -879,15 +875,18 @@ class Ui_MainWindow(QMainWindow):
         self.verticalLayout_4.addWidget(self.stackedWidget)
         self.horizontalLayout.addWidget(self.body)
         self.setCentralWidget(self.centralwidget)
-        self.retranslateUi(self)
+        self.retranslateUi()
+        self.settings = Ui_Settings()
+        Ui_MainWindow.self_main_window = self
+
+        self.settings.setupUi()
+        self.settings.setMaximumSize(QtCore.QSize(400, 300))
         self.stackedWidget.setCurrentIndex(0)
         self.add_account_button.clicked.connect(self.add_account)
         self.load_accounts_from_db()
-        self.settings = Ui_Settings()
-        self.settings.setMaximumSize(QtCore.QSize(400, 300))
+        
         self.load_settings()
-        Ui_MainWindow.self_main_window = self
-        self.settings.setupUi()
+        
         QtCore.QMetaObject.connectSlotsByName(self)
     def load_accounts_from_db(self):
         accounts = db.get_all_accounts()
@@ -911,15 +910,20 @@ class Ui_MainWindow(QMainWindow):
         self.settings.batches_interval = settings["users_batches_interval"]
         self.settings.add_users_limit = settings["users_limit"]
         self.settings.add_users_start_index = settings["add_users_start_index"]
-        add_to_group.set_main_client(phone= settings["main_account"])
+
+        if settings["main_account"] != "" and settings["main_account"] != None:
+            add_to_group.set_main_client(phone= settings["main_account"])
 
     def add_account_to_list(self):
-        loop = asyncio.get_event_loop()
-        asyncio.set_event_loop(loop)
-        groups = loop.run_until_complete(add_to_group.load_groups(add_to_group.last_added_client))
-        add_to_group.accounts[add_to_group.last_added_client] = groups
-        add_to_group.client_list[add_to_group.last_added_client] = add_to_group.current_phone
+        add_to_group.set_client()
+        # check if db has main client
+        settings = db.get_all_settings()
+        if settings != []:
+            settings = settings[0]
+            if settings["main_account"] == "":
+                db.update_settings(settings["id"],main_account=add_to_group.current_phone)
         db.insert_account(add_to_group.current_phone, add_to_group.last_added_client.api_id, add_to_group.last_added_client.api_hash)
+        # self.settings.load_account_dropdown()
         self.accounts_list_show()
     def accounts_list_show(self):
         index = 1
@@ -941,6 +945,7 @@ class Ui_MainWindow(QMainWindow):
         self.accounts_list.setStyleSheet('font: 12pt "MS Shell Dlg 2";')
         # self.accounts_list.setLayout(formLayout)
     def add_account(self, phone = None, api_id = None, api_hash = None):
+        self.reset_danger_text(accounts=True)
         from_input = False
         if phone == None or api_id == None or api_hash == None:
             phone = self.phone_input.text()
@@ -961,16 +966,24 @@ class Ui_MainWindow(QMainWindow):
         client = loop.run_until_complete(add_to_group.client_initializer(api_id, api_hash, phone))
 
         if client == False:
-            Ui_Form.verify_account()
+            self.setEnabled(False)
+            self.ui_code.show()
         elif client == CONNECT_ERROR:
             self.accounts_danger_text.setText(CONNECT_ERROR)
+        elif client == FLOOD_ERROR:
+            self.accounts_danger_text.setText(FLOOD_ERROR)
+        elif client == INVALID_ACCOUNT_ERROR:
+            self.accounts_danger_text.setText(INVALID_ACCOUNT_ERROR)
         else:
             self.add_account_to_list()
+    def finished_Ui_Code_thead(self):
+        self.thread_Ui_Code.quit()
+
 
     def settings_page_show(self):
         if self.running_scraping or self.running_adding:
             return
-
+        self.settings.load_account_dropdown()
         self.settings.show()
         self.setEnabled(False)
         self.settings_open = True
@@ -1183,7 +1196,7 @@ class Ui_MainWindow(QMainWindow):
         self.continue_button.setEnabled(False)
         self.continue_button.setHidden(False)
         self.get_already_added_users = False
-        self.reset_danger_text(True,True)
+        self.reset_danger_text(add_members= True,scrape= True)
         self.add_members_danger_text.setText(f"Paused! Should wait {self.should_wait_seconds} secs.")
     def continue_adding(self):
         self.reset_danger_text(add_members=True)
@@ -1198,7 +1211,7 @@ class Ui_MainWindow(QMainWindow):
         if reset_progressbar:
             self.reset_progresbar = True
 
-        self.reset_danger_text(True,True)
+        self.reset_danger_text(add_members= True,scrape= True)
 
         if show_text:
             text = "Stopped!"
@@ -1221,11 +1234,13 @@ class Ui_MainWindow(QMainWindow):
         self.add_members_table.setRowCount(0)
         self.counter.setText("0")
         self.add_index = 0
-    def reset_danger_text(self,add_members = False, scrape = False):
+    def reset_danger_text(self,add_members = False, scrape = False, accounts = False):
         if add_members:
             self.add_members_danger_text.setText("")
         if scrape:
             self.scrape_danger_text.setText("")
+        if accounts:
+            self.accounts_danger_text.setText("")
     def closeEvent(self,event):
         if self.settings_open:
             event.ignore()
@@ -1239,52 +1254,52 @@ class Ui_MainWindow(QMainWindow):
 
         if result == QMessageBox.Yes:
             event.accept()
-    def retranslateUi(self, MainWindow):
+    def retranslateUi(self):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "Members Add Bot"))
-        self.accounts_button.setText(_translate("MainWindow", "Accounts"))
+        self.setWindowTitle(_translate("self", "Members Add Bot"))
+        self.accounts_button.setText(_translate("self", "Accounts"))
         self.accounts_button.clicked.connect(lambda: self.stackedWidget.setCurrentWidget(self.accounts_page))
-        self.scrape_button.setText(_translate("MainWindow", "Scrape"))
+        self.scrape_button.setText(_translate("self", "Scrape"))
         self.scrape_button.clicked.connect(lambda: self.stackedWidget.setCurrentWidget(self.scrape_page))
         self.scrape_button.clicked.connect(self.load_groups_scrape_button, QtCore.Qt.QueuedConnection)
-        self.add_members_button.setText(_translate("MainWindow", "Add Members"))
+        self.add_members_button.setText(_translate("self", "Add Members"))
         self.add_members_button.clicked.connect(lambda: self.stackedWidget.setCurrentWidget(self.add_members_page))
         self.add_members_button.clicked.connect(self.load_groups_add_members_button)
-        self.accounts_label.setText(_translate("MainWindow", "Accounts"))
-        self.phone_input.setPlaceholderText(_translate("MainWindow", "Phone (e.g. +3598877548960)"))
-        self.api_id_input.setPlaceholderText(_translate("MainWindow", "Api Id"))
-        self.api_hash_input.setPlaceholderText(_translate("MainWindow", "Api Hash"))
+        self.accounts_label.setText(_translate("self", "Accounts"))
+        self.phone_input.setPlaceholderText(_translate("self", "Phone (e.g. +3598877548960)"))
+        self.api_id_input.setPlaceholderText(_translate("self", "Api Id"))
+        self.api_hash_input.setPlaceholderText(_translate("self", "Api Hash"))
         font = QtGui.QFont()
         font.setPointSize(10)
         self.api_id_input.setFont(font)
         self.api_hash_input.setFont(font)
         self.phone_input.setFont(font)
         self.accounts_danger_text.setText("")
-        self.add_account_button.setText(_translate("MainWindow", "Add Account"))
-        self.accounts_list_label.setText(_translate("MainWindow", "Added Accounts"))
-        self.scrape_label.setText(_translate("MainWindow", "Scrape"))
-        self.scraped_members_label.setText(_translate("MainWindow", "Scraped Members"))
+        self.add_account_button.setText(_translate("self", "Add Account"))
+        self.accounts_list_label.setText(_translate("self", "Added Accounts"))
+        self.scrape_label.setText(_translate("self", "Scrape"))
+        self.scraped_members_label.setText(_translate("self", "Scraped Members"))
         item = self.scraped_members_table.horizontalHeaderItem(0)
-        item.setText(_translate("MainWindow", "Username"))
+        item.setText(_translate("self", "Username"))
         item = self.scraped_members_table.horizontalHeaderItem(1)
-        item.setText(_translate("MainWindow", "Name"))
-        self.scraped_groups_label.setText(_translate("MainWindow", "Groups"))
-        self.choose_group_label.setText(_translate("MainWindow", "Choose group to scrape members from."))
-        self.choose_csv_button.setText(_translate("MainWindow", "Choose csv"))
-        self.add_members_labe.setText(_translate("MainWindow", "Add Memebrs"))
-        self.add_members_groups_label.setText(_translate("MainWindow", "Groups"))
-        self.choose_group_input_label.setText(_translate("MainWindow", "Choose group to add members to"))
-        self.counter_label.setText(_translate("MainWindow", "Ädded users: "))
-        self.start_button.setText(_translate("MainWindow", "Start"))
-        self.pause_button.setText(_translate("MainWindow", "Pause"))
-        self.continue_button.setText(_translate("MainWindow", "Continue"))
-        self.stop_adding_button.setText(_translate("MainWindow", "Stop"))
+        item.setText(_translate("self", "Name"))
+        self.scraped_groups_label.setText(_translate("self", "Groups"))
+        self.choose_group_label.setText(_translate("self", "Choose group to scrape members from."))
+        self.choose_csv_button.setText(_translate("self", "Choose csv"))
+        self.add_members_labe.setText(_translate("self", "Add Memebrs"))
+        self.add_members_groups_label.setText(_translate("self", "Groups"))
+        self.choose_group_input_label.setText(_translate("self", "Choose group to add members to"))
+        self.counter_label.setText(_translate("self", "Ädded users: "))
+        self.start_button.setText(_translate("self", "Start"))
+        self.pause_button.setText(_translate("self", "Pause"))
+        self.continue_button.setText(_translate("self", "Continue"))
+        self.stop_adding_button.setText(_translate("self", "Stop"))
         item = self.add_members_table.horizontalHeaderItem(0)
-        item.setText(_translate("MainWindow", "Username"))
+        item.setText(_translate("self", "Username"))
         item = self.add_members_table.horizontalHeaderItem(1)
-        item.setText(_translate("MainWindow", "Account"))
+        item.setText(_translate("self", "Account"))
         item = self.add_members_table.horizontalHeaderItem(2)
-        item.setText(_translate("MainWindow", "Process"))
+        item.setText(_translate("self", "Process"))
 import resources_rc
 class ScrapeMembersThread(QtCore.QThread):
     finished = QtCore.pyqtSignal()
@@ -1465,15 +1480,26 @@ class AddMembersThread(QtCore.QThread):
                                                                         "width: 10px;\n"
                                                                         "})")
 
-class Ui_Form(object):
-    code = None
 
-    def setupUi(self, Form):
-        Form.setObjectName("Form")
-        Form.resize(411, 145)
-        self.verticalLayout = QtWidgets.QVBoxLayout(Form)
+class Ui_Code(QWidget):
+    code = None
+    ui_password = None
+    def __init__(self, ) -> None:
+        super(QWidget,self).__init__()
+        self.setupUi()
+    def setupUi(self):
+        self.ui_password = Ui_Password()
+        self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint)
+        self.setObjectName("self")
+        self.resize(300, 145)
+        self.setMinimumSize(300,102)
+        self.setMaximumSize(300,102)
+        icon = QtGui.QIcon()
+        icon.addFile(u":/images/logo2.png", QtCore.QSize(), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.setWindowIcon(icon)
+        self.verticalLayout = QtWidgets.QVBoxLayout(self)
         self.verticalLayout.setObjectName("verticalLayout")
-        self.frame = QtWidgets.QFrame(Form)
+        self.frame = QtWidgets.QFrame(self)
         self.frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame.setObjectName("frame")
@@ -1487,53 +1513,62 @@ class Ui_Form(object):
         self.label.setStyleSheet("color: rgb(50, 141, 189, 255);")
         self.label.setObjectName("label")
         self.verticalLayout_2.addWidget(self.label)
-        self.code = QtWidgets.QLineEdit(self.frame)
-        self.code.setObjectName("code")
-        self.verticalLayout_2.addWidget(self.code)
+        self.code_input = QtWidgets.QLineEdit(self.frame)
+        self.code_input.setObjectName("code_input")
+        font = QtGui.QFont()
+        font.setPointSize(9)
+        self.code_input.setFont(font)
+        self.verticalLayout_2.addWidget(self.code_input)
         self.verticalLayout.addWidget(self.frame, 0, QtCore.Qt.AlignVCenter)
-        self.code.returnPressed.connect(self.send_code)
-        self.retranslateUi(Form)
-        QtCore.QMetaObject.connectSlotsByName(Form)
+        self.code_input.returnPressed.connect(self.send_code)
+        self.retranslateUi()
+        QtCore.QMetaObject.connectSlotsByName(self)
 
     def send_code(self):
         has_not_password = True
-        Ui_Form.code = self.code.text()
-        if Ui_Form.code == "":
+        self.code = self.code_input.text()
+        if self.code == "":
             return
         try:
-            add_to_group.last_added_client.sign_in(add_to_group.current_phone,Ui_Form.code, phone_code_hash= add_to_group.current_phone_hash.phone_code_hash)
-        except telethon.errors.SessionPasswordNeededError:
+            add_to_group.last_added_client.sign_in(add_to_group.current_phone,self.code, phone_code_hash= add_to_group.current_phone_hash.phone_code_hash)
+        except SessionPasswordNeededError:
             has_not_password= False
-            Ui_Password.show_password_window()
+            self.ui_password.show()
+        except PhoneCodeInvalidError:
+            Ui_MainWindow.self_main_window.accounts_danger_text.setText("Wrong code!")
+            Ui_MainWindow.self_main_window.setEnabled(True)
+            self.code_input.setText("")
+            self.close()
+            return
 
         if has_not_password:
-            add_to_group.last_added_client.sign_in(add_to_group.current_phone, Ui_Form.code)
+            add_to_group.last_added_client.sign_in(add_to_group.current_phone, Ui_Code.code)
             if add_to_group.last_added_client.is_user_authorized():
                 Ui_MainWindow.add_account_to_list(Ui_MainWindow.self_main_window)
+        Ui_MainWindow.self_main_window.setEnabled(True)
+        self.hide()
 
-        Ui_Form.Form.hide()
-
-    @staticmethod
-    def verify_account():
-        Ui_Form.app = QtWidgets.QApplication(sys.argv)
-        Ui_Form.Form = QtWidgets.QWidget()
-        Ui_Form.ui = Ui_Form()
-        Ui_Form.ui.setupUi(Ui_Form.Form)
-        Ui_Form.Form.show()
-        # sys.exit(Ui_Form.app.exec_())
-
-    def retranslateUi(self, Form):
+    def retranslateUi(self):
         _translate = QtCore.QCoreApplication.translate
-        Form.setWindowTitle(_translate("Form", "Form"))
-        self.label.setText(_translate("Form", "Enter The Code: "))
+        self.setWindowTitle(_translate("self", "Code"))
+        self.label.setText(_translate("self", "Enter The Code: "))
 
-class Ui_Password(object):
-    def setupUi(self, Form):
-        Form.setObjectName("Form")
-        Form.resize(421, 102)
-        self.verticalLayout = QtWidgets.QVBoxLayout(Form)
+class Ui_Password(QWidget):
+    def __init__(self, )-> None:
+        super(QWidget,self).__init__()
+        self.setupUi()
+    def setupUi(self):
+        self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint)
+        self.setObjectName("self")
+        self.resize(300, 102)
+        self.setMinimumSize(300,102)
+        self.setMaximumSize(300,102)
+        icon = QtGui.QIcon()
+        icon.addFile(u":/images/logo2.png", QtCore.QSize(), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.setWindowIcon(icon)
+        self.verticalLayout = QtWidgets.QVBoxLayout(self)
         self.verticalLayout.setObjectName("verticalLayout")
-        self.frame = QtWidgets.QFrame(Form)
+        self.frame = QtWidgets.QFrame(self)
         self.frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame.setObjectName("frame")
@@ -1547,36 +1582,42 @@ class Ui_Password(object):
         self.label.setStyleSheet("color: rgb(50, 141, 189, 255);")
         self.label.setObjectName("label")
         self.verticalLayout_2.addWidget(self.label)
-        self.password = QtWidgets.QLineEdit(self.frame)
-        self.password.setObjectName("password")
-        self.password.returnPressed.connect(self.get_password)
-        self.verticalLayout_2.addWidget(self.password)
+        self.password_input = QtWidgets.QLineEdit(self.frame)
+        self.password_input.setObjectName("password")
+        self.password_input.setEchoMode(QLineEdit.Password)
+        font = QtGui.QFont()
+        font.setPointSize(9)
+        self.password_input.setFont(font)
+        self.password_input.returnPressed.connect(self.get_password)
+        self.verticalLayout_2.addWidget(self.password_input)
         self.verticalLayout.addWidget(self.frame)
 
-        self.retranslateUi(Form)
-        QtCore.QMetaObject.connectSlotsByName(Form)
+        self.retranslateUi()
+        QtCore.QMetaObject.connectSlotsByName(self)
 
     def get_password(self):
-        password = self.password.text()
+        password = self.password_input.text()
 
         if password == "":
             return
+            
+        try:
+            add_to_group.last_added_client.sign_in(password = str(password))
+        except PasswordHashInvalidError:
+            Ui_MainWindow.self_main_window.accounts_danger_text.setText("Wrong password!")
+            Ui_MainWindow.self_main_window.setEnabled(True)
+            self.password_input.setText("")
+            self.close()
+            return
 
-        add_to_group.last_added_client.sign_in(password = str(password))
         Ui_MainWindow.add_account_to_list(Ui_MainWindow.self_main_window)
-        Ui_Password.Form.hide()
+        Ui_MainWindow.self_main_window.setEnabled(True)
+        self.hide()
 
-    @staticmethod
-    def show_password_window():
-        Ui_Password.app = QtWidgets.QApplication(sys.argv)
-        Ui_Password.Form = QtWidgets.QWidget()
-        Ui_Password.ui = Ui_Password()
-        Ui_Password.ui.setupUi(Ui_Password.Form)
-        Ui_Password.Form.show()
-    def retranslateUi(self, Form):
+    def retranslateUi(self):
         _translate = QtCore.QCoreApplication.translate
-        Form.setWindowTitle(_translate("Form", "Form"))
-        self.label.setText(_translate("Form", "Enter Password: "))
+        self.setWindowTitle(_translate("self", "Password"))
+        self.label.setText(_translate("self", "Enter Password: "))
 class RemoveAccountsEventFilter(QtCore.QObject):
     def __init__(self):
          super(RemoveAccountsEventFilter, self).__init__()
@@ -1596,7 +1637,8 @@ class RemoveAccountsEventFilter(QtCore.QObject):
                     client = key_list[client_index]
 
                     # Disconnect client
-                    client.disconnect()
+                    client.log_out()
+                    # client.disconnect()
 
                     # Remove from storage
                     del add_to_group.accounts[client]
@@ -1606,6 +1648,10 @@ class RemoveAccountsEventFilter(QtCore.QObject):
                     account = db.get_account_by_phone(client_phone)
                     if account != []:
                         db.delete_account(account[0]["id"])
+                    # Remove from settings
+                    settings = db.get_all_settings()
+                    if settings != []:
+                        db.update_settings(settings[0]["id"],main_account="")
                     # Check if is main
                     if add_to_group.is_client_main(client):
                         if add_to_group.client_list != {}:
@@ -1630,7 +1676,8 @@ class Ui_Settings(QtWidgets.QWidget):
     id = None
     inittial_setup = True
     reload_groups = False
-    
+    detect_dropdown = True
+
     def __init__(self, ):
         super(QWidget,self).__init__()
     def setupUi(self):
@@ -1833,9 +1880,9 @@ class Ui_Settings(QtWidgets.QWidget):
         self.settings_menu.addTab(self.Info, "")
         self.verticalLayout_2.addWidget(self.settings_menu)
         self.verticalLayout.addWidget(self.settings_body_frame)
-        self.retranslateUi(self)
+        self.retranslateUi()
         self.settings_menu.setCurrentIndex(0)
-        self.load_account_dropdown()
+        # self.load_account_dropdown()
         self.load_settings_from_db()
         QtCore.QMetaObject.connectSlotsByName(self)
     def load_settings_from_db(self):
@@ -1869,7 +1916,7 @@ class Ui_Settings(QtWidgets.QWidget):
             self.add_users_start_index = settings["add_users_start_index"]
             self.add_users_start_index_input.setText(str(settings["add_users_start_index"]))
 
-            self.main_accounts_dropdown.setCurrentText(str(settings["main_account"]))
+            # self.main_accounts_dropdown.setCurrentText(str(settings["main_account"]))
         else:
             id = db.insert_settings(self.only_megagroups_checkbox.isChecked(),
                                          self.skip_added_users_checkbox.isChecked(),
@@ -1984,28 +2031,33 @@ class Ui_Settings(QtWidgets.QWidget):
     def load_account_dropdown(self):
         if hasattr(self, "main_accounts_dropdown"):
             accounts = list(add_to_group.client_list.values())
-            print(accounts)
             if accounts == []:
                 return
 
+            self.detect_dropdown = False
             self.delete_accounts_from_dropdown()
+            self.detect_dropdown = False
+
             self.main_accounts_dropdown.addItems(accounts)
+            settings = db.get_all_settings()
+            if settings != []:
+                self.main_accounts_dropdown.setCurrentText(settings[0]["main_account"])
+            
     def delete_accounts_from_dropdown(self):
         self.main_accounts_dropdown.clear()
     def get_selected_account(self):
-        if not self.inittial_setup:
-            phone = self.main_accounts_dropdown.currentText()
-            print(phone)
-            if phone == "":
-                return
+        if self.detect_dropdown:
+                phone = self.main_accounts_dropdown.currentText()
+                if phone == "":
+                    return
 
-            add_to_group.set_main_client(phone = phone)
-            db.update_settings(self.id, main_account=phone)
+                add_to_group.set_main_client(phone = phone)
+                db.update_settings(self.id, main_account=phone)
 
-            Ui_MainWindow.load_groups_scrape_button(Ui_MainWindow.self_main_window)
-            Ui_MainWindow.load_groups_add_members_button(Ui_MainWindow.self_main_window)
+                Ui_MainWindow.load_groups_scrape_button(Ui_MainWindow.self_main_window)
+                Ui_MainWindow.load_groups_add_members_button(Ui_MainWindow.self_main_window)
 
-        self.inittial_setup = False
+        self.detect_dropdown = True
     def closeEvent(self,event):
         Ui_MainWindow.self_main_window.settings_open = False
         Ui_MainWindow.self_main_window.setEnabled(True)
@@ -2014,25 +2066,25 @@ class Ui_Settings(QtWidgets.QWidget):
             Ui_MainWindow.self_main_window.load_groups(scrape=True)
             Ui_MainWindow.self_main_window.stop_adding_members()
             self.reload_groups = False
-    def retranslateUi(self, Ui_Settings):
+    def retranslateUi(self):
         _translate = QtCore.QCoreApplication.translate
-        Ui_Settings.setWindowTitle(_translate("Ui_Settings", "Settings"))
+        self.setWindowTitle(_translate("self", "Settings"))
         self.only_megagroups_checkbox.setText(_translate("Ui_Settings", "Get only 'Megagroups'"))
         self.skip_added_users_checkbox.setText(_translate("Ui_Settings", "Skip already added users"))
         self.automatic_settings.setText(_translate("Ui_Settings", "Automatic settings"))
         self.recently_active_checkbox.setText(_translate("Ui_Settings", "Scrape only recently active users"))
-        self.label.setText(_translate("Ui_Settings", "Interval between member add(secs)"))
-        self.label_2.setText(_translate("Ui_Settings", "Interval between memeber batches(secs)"))
-        self.label_3.setText(_translate("Ui_Settings", "Memebrs per batch"))
-        self.label_4.setText(_translate("Ui_Settings", "Choose main account"))
-        self.label_5.setText(_translate("Ui_Settings", "Add members limit"))
-        self.label_7.setText(_translate("Ui_Settings", "Start adding users from"))
-        self.user_add_time_interval_input.setPlaceholderText(_translate("Ui_Settings", "10"))
-        self.batches_interval_input.setPlaceholderText(_translate("Ui_Settings", "60"))
-        self.users_per_batch_input.setPlaceholderText(_translate("Ui_Settings", "20"))
-        self.add_users_start_index_input.setPlaceholderText(_translate("Ui_Settings", "1"))
-        self.settings_menu.setTabText(self.settings_menu.indexOf(self.Settings), _translate("Ui_Settings", "Settings"))
-        self.textEdit.setHtml(_translate("Ui_Settings", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
+        self.label.setText(_translate("self", "Interval between member add(secs)"))
+        self.label_2.setText(_translate("self", "Interval between memeber batches(secs)"))
+        self.label_3.setText(_translate("self", "Memebrs per batch"))
+        self.label_4.setText(_translate("self", "Choose main account"))
+        self.label_5.setText(_translate("self", "Add members limit"))
+        self.label_7.setText(_translate("self", "Start adding users from"))
+        self.user_add_time_interval_input.setPlaceholderText(_translate("self", "10"))
+        self.batches_interval_input.setPlaceholderText(_translate("self", "60"))
+        self.users_per_batch_input.setPlaceholderText(_translate("self", "20"))
+        self.add_users_start_index_input.setPlaceholderText(_translate("self", "1"))
+        self.settings_menu.setTabText(self.settings_menu.indexOf(self.Settings), _translate("self", "Settings"))
+        self.textEdit.setHtml(_translate("self", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
         "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
         "p, li { white-space: pre-wrap; }\n"
         "</style></head><body style=\" font-family:\'MS Shell Dlg 2\'; font-size:9pt; font-weight:400; font-style:normal;\">\n"
@@ -2041,4 +2093,4 @@ class Ui_Settings(QtWidgets.QWidget):
         "<p align=\"center\" style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">Telegram Api have got restrictions so you can add certain amoun of members per day in one group. If you use more than one account you will be able to add more people faster. I sugest you to set 10 secs time intervla between adding members if you use only one account, 20 people batches and 60 secs betweem batchest. in my experience it works the best in that way if you use one account. If you use more than one account you can set 2 secs time interval between adding members.</p>\n"
         "<p align=\"center\" style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">You can get your Api Id and Api Hash from here: https://my.telegram.org/auth</p>\n"
         "<p align=\"center\" style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">For more information text me on: easytelegrambots@gmail.com</p></body></html>"))
-        self.settings_menu.setTabText(self.settings_menu.indexOf(self.Info), _translate("Ui_Settings", "Info"))
+        self.settings_menu.setTabText(self.settings_menu.indexOf(self.Info), _translate("self", "Info"))
