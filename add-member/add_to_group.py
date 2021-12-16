@@ -2,15 +2,15 @@
 import asyncio
 from logging import currentframe
 from telethon import client
+from telethon.errors.rpcbaseerrors import AuthKeyError
 from telethon.sync import *
 from telethon.tl.functions.messages import GetDialogsRequest
 from telethon.tl.types import InputPeerEmpty, InputPeerChannel, InputPeerUser
-from telethon.errors.rpcerrorlist import  PeerFloodError, UserBannedInChannelError, UserChannelsTooMuchError, UserKickedError, UserNotMutualContactError, UserPrivacyRestrictedError, UsernameNotOccupiedError, UsersTooMuchError
+from telethon.errors.rpcerrorlist import  ApiIdInvalidError, FloodWaitError, PeerFloodError, UserBannedInChannelError, UserChannelsTooMuchError, UserKickedError, UserNotMutualContactError, UserPrivacyRestrictedError, UsernameNotOccupiedError, UsersTooMuchError
 from telethon.tl.functions.channels import InviteToChannelRequest
 from scraper import *
+from db import *
 import csv
-import traceback
-
 
 
 SUCCESSFULL_ADDED = "Added."
@@ -27,32 +27,31 @@ KICKED_USER_ERROR = "The user was kicked from this supergroup/channel."
 NOT_MUTAL_ERROR = "The user is not a mutual contact."
 NOT_USED_USERNAME_ERROR = "The username is not in use by anyone else yet." 
 ACCOUNT_NOT_PARTICIPATE_IN_GROUP = "Account not participate in the group."
+INVALID_ACCOUNT_ERROR = "The api_id/api_hash combination is invalid."
+CONTACT_OWNER_ERROR = "Restart the app. If this happen again contact support."
+ACCOUNT_NOT_IN_GROUP = "The account is not member in the group."
 
 scraper = Scraper()
+db = Db()
 class Add_To_Group:
-    client_list = {}
-    accounts = {}
-    main_client = None
+    client_phone = {}
+    client_groups = {}
+    client_users = {}
     current_client = None
-    last_added_client = None
-    current_phone = None
-    current_phone_hash = None
-    mode = 1
+    main_client = None
     already_added_users = []
-    skip_added_users = True
-    get_megagroups_only = True
 
     def change_client(self,client = None,deleteClient = False):
         if client == None:
             client = self.current_client
-        if self.accounts == {}:
+        if self.client_groups == {}:
             return
 
-        clients = list(self.accounts.keys())
+        clients = list(self.client_groups.keys())
         clientIndex = clients.index(client) + 1
 
         if deleteClient:
-            current_client_index = self.clients.index(client)
+            current_client_index = clients.index(client)
             clients.pop(current_client_index)
 
         if clientIndex > len(clients)-1:
@@ -88,10 +87,11 @@ class Add_To_Group:
     def load_group_names(self,groups):
         i=0
         group_names = {}
+        settings = db.get_all_settings()[0]
 
         for group in groups:
             try:
-                if self.get_megagroups_only:
+                if settings["only_megagroups"]:
                         if group.megagroup == False:
                             continue
 
@@ -102,10 +102,10 @@ class Add_To_Group:
 
         return group_names
     def get_clients(self, index = None):
-        if(self.accounts == {}):
+        if(self.client_groups == {}):
             return
 
-        key_list = list(self.accounts.keys())
+        key_list = list(self.client_groups.keys())
 
         if index == None:
             return key_list
@@ -116,8 +116,8 @@ class Add_To_Group:
             self.main_client = None
             return
         if phone != None:
-            clients = list(self.client_list.keys())
-            phones = list(self.client_list.values())
+            clients = list(self.client_phone.keys())
+            phones = list(self.client_phone.values())
             index = phones.index(phone)
             self.main_client = clients[index]
         elif client != None:
@@ -127,12 +127,13 @@ class Add_To_Group:
             return True
         else:
             return False
-    def get_account_groups(self,current_client = False,main_client = False,client = None, client_index = None, group_index = None):
-        if(self.accounts == {}):
+    def get_account_groups(self,current_client = False,main_client = False,client = None, client_index = None, group_index = None, group_name = None):
+        if(self.client_groups == {}):
             return
+        settings = db.get_all_settings()[0]
 
-        key_list = list(self.accounts.keys())
-        value_list = list(self.accounts.values())
+        key_list = list(self.client_groups.keys())
+        value_list = list(self.client_groups.values())
         output = value_list
         
         if current_client:
@@ -147,17 +148,23 @@ class Add_To_Group:
         elif client_index != None:
             output = value_list[client_index]
         
-        if self.get_megagroups_only:
+        if settings["only_megagroups"]:
             megagroups = []
             for group in output:
+                # print(group)
                 try:
                     if group.megagroup == True:
                         megagroups.append(group)
                 except:
                     continue
             output = megagroups
+
         if group_index != None:
             output = output[group_index]
+
+        if group_name != None:
+            output = [x for x in output if x.title == group_name]
+            print("group to scrape members from: ",output.title)
         return output
     def client_group_select(self,group_name,groups):
         if groups == []:
@@ -210,22 +217,27 @@ class Add_To_Group:
     async def client_initializer(self,api_id, api_hash, phone):
         try:
             client = TelegramClient(phone, api_id, api_hash)
-
-            if self.current_client == None:
-                self.current_client = client
-            if self.main_client == None:
-                self.main_client = client
-
-            self.last_added_client = client
-            self.current_phone = phone
        
             await client.connect()
+        # except:
+        #     print("connect error")
+        #     return CONNECT_ERROR
+            if not await client.is_user_authorized():
+            # try:
+                phone_hash = await client.send_code_request(phone)
+                return (client, phone_hash)
+
+        except FloodWaitError:
+            db.delete_account(api_id=api_id)
+            return FLOOD_ERROR
+        except ApiIdInvalidError:
+            return INVALID_ACCOUNT_ERROR
+        except AuthKeyError:
+            return CONTACT_OWNER_ERROR
         except:
-            print("connect error")
-            return CONNECT_ERROR
-        if not await client.is_user_authorized():
-            self.current_phone_hash = await client.send_code_request(phone)
-            return False
+            return OTHER_ERROR
+            
+
         return client
 
     def read_file(self,input_file):
@@ -245,11 +257,41 @@ class Add_To_Group:
          loop = asyncio.get_event_loop()
          asyncio.set_event_loop(loop)    
          self.already_added_users =loop.run_until_complete(scraper.scrape_members(self.main_client, group, already_added=True))
+    def set_client(self, client,phone):
+        settings = db.get_all_settings()
+        if self.current_client == None:
+                self.current_client = client
+        if self.main_client == None:
+                if settings != []:
+                    settings = settings[0]
+                    if settings["main_account"] == "":
+                        self.set_main_client(client=client)
+                    else:
+                        if settings["main_account"] == phone:
+                            self.set_main_client(client=client)
 
+        loop = asyncio.get_event_loop()
+        asyncio.set_event_loop(loop)
+        groups = loop.run_until_complete(self.load_groups(client))
+        self.client_groups[client] = groups
+        self.client_phone[client] = phone
+    def get_user_by_client(self, user_id):
+        print("account in client_users: ",self.current_client not in self.client_users)
+        if self.current_client not in self.client_users:
+            return None
+
+        users = self.client_users[self.current_client]
+        user = [x for x in users if x["id"] == user_id ]
+
+        if user == []:
+            return None
+        
+        return user[0]
     async def add_members(self,user, group_name):
         client = self.current_client
         groups = self.get_account_groups(current_client=True)
         target_group_entity = self.client_group_select(group_name, groups)
+        settings = db.get_all_settings()[0]
 
         if target_group_entity == None:
             return ACCOUNT_NOT_PARTICIPATE_IN_GROUP
@@ -258,7 +300,7 @@ class Add_To_Group:
         user_to_add = None
 
         try:
-            if self.skip_added_users:
+            if settings["skip_added_users"]:
                 for added_user in self.already_added_users:
                     if user["name"] == added_user["name"]:
                         already_added = True
@@ -267,11 +309,11 @@ class Add_To_Group:
                 if already_added:
                     return ALREADY_ADDED
 
-            if self.mode == 1:
+            if int(settings["mode"]) == 0:
                 if user["username"] == "":
                     return NO_USERNAME
                 user_to_add = await client.get_input_entity(user["username"])
-            elif self.mode == 2:
+            elif int(settings["mode"]) == 1:
                 user_to_add = InputPeerUser(user["id"],user["access_hash"])
 
             await client(InviteToChannelRequest(target_group_entity,[user_to_add]))
@@ -292,7 +334,8 @@ class Add_To_Group:
             return NOT_MUTAL_ERROR
         except UsernameNotOccupiedError:
             return NOT_USED_USERNAME_ERROR
-        except:
+        except Exception as ex:
+            print(ex)
             return OTHER_ERROR
 
        

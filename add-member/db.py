@@ -24,6 +24,7 @@ class Db:
         skip_added_users BOOLEAN NOT NULL,
         automatic_settings BOOLEAN NOT NULL,
         scrape_active_users BOOLEAN NOT NULL,
+        mode BOOLEAN NOT NULL,
         users_add_interval INTEGER NOT NULL,
         users_batches_interval INTEGER NOT NULL,
         users_per_batch INTEGER NOT NULL,
@@ -53,6 +54,7 @@ class Db:
                         skip_added_users,
                         automatic_settings,
                         scrape_active_users,
+                        mode,
                         users_add_interval,
                         users_batches_interval,
                         users_per_batch,
@@ -67,6 +69,7 @@ class Db:
             skip_added_users,
             automatic_settings,
             scrape_active_users,
+            mode,
             users_add_interval,
             users_batches_interval,
             users_per_batch,
@@ -79,6 +82,7 @@ class Db:
             :skip_added_users,
             :automatic_settings,
             :scrape_active_users,
+            :mode,
             :users_add_interval,
             :users_batches_interval,
             :users_per_batch,
@@ -92,6 +96,7 @@ class Db:
             "skip_added_users": skip_added_users,
             "automatic_settings": automatic_settings,
             "scrape_active_users":scrape_active_users,
+            "mode": mode,
             "users_add_interval": users_add_interval,
             "users_batches_interval":users_batches_interval,
             "users_per_batch": users_per_batch,
@@ -144,6 +149,7 @@ class Db:
                         skip_added_users = None,
                         automatic_settings = None,
                         scrape_only_recently_active_users = None,
+                        mode = None,
                         users_add_interval = None,
                         users_batches_interval = None,
                         users_per_batch = None,
@@ -162,6 +168,8 @@ class Db:
             query.append("""automatic_settings = :automatic_settings""")
         if scrape_only_recently_active_users != None:
             query.append("""scrape_active_users = :scrape_active_users""")
+        if mode != None:
+            query.append("""mode = :mode""")
         if users_add_interval != None:
             query.append("""users_add_interval = :users_add_interval""")
         if users_batches_interval != None:
@@ -183,6 +191,7 @@ class Db:
             "skip_added_users": skip_added_users,
             "automatic_settings": automatic_settings,
             "scrape_active_users":scrape_only_recently_active_users,
+            "mode":mode,
             "users_add_interval": users_add_interval,
             "users_batches_interval":users_batches_interval,
             "users_per_batch": users_per_batch,
@@ -245,11 +254,11 @@ class Db:
         con.close()
 
         return account
-    def delete_account(self, id):
+    def delete_account(self, id = None, api_id = None):
         con = self.get_db_connection()
 
-        sql = """DELETE FROM accounts WHERE id = ?"""
-        con.execute(sql,(id,))
+        sql = """DELETE FROM accounts WHERE id = ? or api_id = ?"""
+        con.execute(sql,(id,api_id,))
         con.commit()
         con.close()
     def if_account_exist(self, phone):
