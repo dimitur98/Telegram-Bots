@@ -4,6 +4,7 @@ from sqlite3.dbapi2 import Error
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QCheckBox, QLabel, QLineEdit, QMainWindow, QWidget, QMessageBox
 from telethon.errors.rpcerrorlist import PasswordHashInvalidError, PhoneCodeInvalidError, SessionPasswordNeededError
+from telethon.tl.types import TypeUrlAuthResult
 from add_to_group import *
 from scraper import *
 from db import *
@@ -1297,7 +1298,7 @@ class Ui_MainWindow(QMainWindow):
             event.accept()
     def retranslateUi(self):
         _translate = QtCore.QCoreApplication.translate
-        self.setWindowTitle(_translate("self", "Members Add Bot"))
+        self.setWindowTitle(_translate("self", "Add Members Bot"))
         self.accounts_button.setText(_translate("self", "Accounts"))
         self.accounts_button.clicked.connect(lambda: self.stackedWidget.setCurrentWidget(self.accounts_page))
         self.scrape_button.setText(_translate("self", "Scrape"))
@@ -1463,6 +1464,10 @@ class AddMembersThread(QtCore.QThread):
     async def add(self):
         settings = db.get_all_settings()[0]
         print("is continue:",self.is_continue)
+
+        clients = list(add_to_group.client_phone.keys())
+        client_flood = {i : False for i in clients}
+
         if self.is_continue:
             index = Ui_MainWindow.self_main_window.add_index + settings["add_users_start_index"]-1
             i = Ui_MainWindow.self_main_window.add_index
@@ -1479,6 +1484,11 @@ class AddMembersThread(QtCore.QThread):
         reqests_counter = 1
         added_counter = 0
         for user in Ui_MainWindow.self_main_window.members_to_add[index:]:
+            if client_flood[add_to_group.current_client]:
+                if not self.change_flooded_client(client_flood):
+                    Ui_MainWindow.self_main_window.add_members_danger_text.setText("All accounts got flood error.")
+                    break
+
             exclude = False
             add = True
             print("user from main: ",user)
@@ -1546,8 +1556,11 @@ class AddMembersThread(QtCore.QThread):
                 Ui_MainWindow.self_main_window.client_flood_errors[add_to_group.current_client] = 0
 
             if proccess != ALREADY_ADDED:
-                add_to_group.change_client(deleteClient=exclude)
+                add_to_group.change_client()
                 reqests_counter += 1
+            
+            if exclude:
+                client_flood[add_to_group.current_client] = True
 
             print("no groups if: ",add_to_group.client_groups == {})
             if add_to_group.client_groups == {}:
@@ -1560,6 +1573,17 @@ class AddMembersThread(QtCore.QThread):
             Ui_MainWindow.self_main_window.add_index = 0
 
         self.finished.emit()
+    def change_flooded_client(self,client_flood):
+        add_to_group.change_client()
+
+        if client_flood[add_to_group.current_client]:
+            floods = list(client_flood.values())
+            if not any(False in x for x in floods):
+                return False
+
+            self.change_flooded_client(client_flood)
+        else:
+            return True
     def pause_adding_members(self):
         self.interrupt_adding()
     def stop_adding_members(self):

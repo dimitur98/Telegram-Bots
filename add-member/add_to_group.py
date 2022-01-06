@@ -1,7 +1,6 @@
 #!/bin/env python3
 import asyncio
-from logging import currentframe
-from telethon import client
+from sqlite3.dbapi2 import Error
 from telethon.errors.rpcbaseerrors import AuthKeyError
 from telethon.sync import *
 from telethon.tl.functions.messages import GetDialogsRequest
@@ -234,7 +233,7 @@ class Add_To_Group:
             return INVALID_ACCOUNT_ERROR
         except AuthKeyError:
             return CONTACT_OWNER_ERROR
-        except:
+        except Error:
             return OTHER_ERROR
             
 
